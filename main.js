@@ -1,5 +1,7 @@
 import { app, BrowserWindow } from 'electron';
 
+require('electron-debug')({showDevTools: true});
+
 let mainWindow = null;
 
 app.on('window-all-closed', () => {

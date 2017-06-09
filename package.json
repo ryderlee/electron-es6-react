@@ -12,9 +12,40 @@
     "babel-preset-react": "^6.3.13",
     "babel-register": "^6.3.13",
     "react": "^15.3.2",
-    "react-dom": "^15.3.2"
+    "react-dom": "^15.3.2",
+    "electron-debug": "^1.1.0",
+    "lodash": "^4.16.6",
+    "moment": "^2.15.2",
+    "request-promise": "^4.1.1",
+    "request": "^2.79.0",
+    "request-promise-native": "^1.0.3",
+    "querystring": "^0.2.0",
+    "forerunnerdb": "^1.4.40",
+    "numeral": "^1.5.6",
+    "material-ui": "^0.16.4",
+    "md5": "^2.2.1",
+    "react-tap-event-plugin": "^2.0.1",
+    "react-grid-system": "^2.0.3",
+    "string-similarity": "^1.1.0",
+    "electron-remote": "^1.1.2",
+    "bluebird": "^3.4.6",
+    "url": "^0.11.0",
+    "cookie": "^0.3.1",
+    "form-data": "^2.1.2",
+    "fetch-cookie": "^0.2.0",
+    "node-fetch": "1.6.3",
+    "cheerio": "^0.22.0",
+    "redux": "^3.6.0",
+    "redux-thunk": "^2.1.0",
+    "source-map-support": "^0.4.8",
+    "x-ray": "^2.3.1",
+    "nightmare": "^2.10.0",
+    "phantomjs-prebuilt": "^2.1.14",
+    "node-horseman": "^3.2.0"
+
   },
   "devDependencies": {
-    "electron": "^1.4.3"
+    "electron": "^1.4.3",
+    "devtron": "^1.4.0"
   }
 }
