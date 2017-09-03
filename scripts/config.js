@@ -41,7 +41,7 @@ config.controller = {
     enabled: true,
     connectionKey: 'sbo1',
     config: {
-      username: 'vdfb660',
+      username: 'Vdfb330',
       password: '1234aaaa',
       momentFormatStr: 'LTS',
       errorReconnectDuration: 5000,

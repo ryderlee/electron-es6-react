@@ -11,6 +11,7 @@ const FormData = require('form-data');
 const Promise = require('bluebird');
 const Numeral = require('numeral');
 const axios = require('axios');
+const qs = require('querystring');
 // const fetch = require('fetch-cookie')(require('node-fetch'))
 // let needle = require('needle')
 const connectionBase = require('./connectionBase');
@@ -47,7 +48,7 @@ class sbo extends connectionBase {
     this.marketCrawlURL = {};
     this.leagueCrawlURL = {};
 
-    this.defaultOptions = { json: true };
+    this.defaultOptions = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.113 Safari/537.36' };
   }
     // this.browser = new Nightmare({show: true}).useragent("Mozilla/5.0 (iPhone; CPU iPhone OS 8_0 like Mac OS X) AppleWebKit/537.51.1 (KHTML, like Gecko) Version/8.0 Mobile/11A465 Safari/9537.53")
     // this.browser = new Horseman().userAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 8_0 like Mac OS X) AppleWebKit/537.51.1 (KHTML, like Gecko) Version/8.0 Mobile/11A465 Safari/9537.53")
@@ -66,67 +67,53 @@ class sbo extends connectionBase {
 
   login() {
     console.log('sbo->login');
-    return axios('http://m.beer777.com/web-root/public/login.aspx', { withCredentials: true })
-      .then(response => response.data)
-      .then((responseText) => {
-        // console.log(responseText)
-        let $ = cheerio.load(responseText);
-        // let fd = new FormData();
-        let fd = {};
-        _.map($('#loginForm').serializeArray(), (obj) => {
-          console.log('setting:%s = %s', obj.name, obj.value);
-          // fd.append(obj.name, obj.value);
-          fd[obj.name] = obj.value;
-        })
-        // fd.append('username', this.config.username);
-        // fd.append('password', this.config.password);
-        fd.username = this.config.username;
-        fd.password = this.config.password;
-        console.log(fd);
-        let url = Url.resolve('http://m.beer777.com/web-root/public/login.aspx', String($('#loginForm').attr('action')));
-        // console.log(url)
-        return axios(url, { method: 'post', data: fd, withCredentials: true });
+    return axios('http://wap.beer777.com/web_root/public/login.aspx', { withCredentials: true })
+      .then((response) => {
+        console.log(response);
+        if (_.has(response.request, 'res') && _.has(response.request.res, 'responseUrl')) {
+          const targetUrl = response.request.res.responseUrl;
+          let $ = cheerio.load(response.data);
+          // let fd = new FormData();
+          let fd = {};
+          fd.ctl01$nUsername = this.config.username;
+          fd.ctl01$nPassword = this.config.password;
+          fd.__EVENTTARGET = 'cmd_english_login';
+          fd.__EVENTARGUMENT = 'Form1';
+          const url = Url.resolve(targetUrl, String($('#Form1').attr('action')));
+          const origin = Url.parse(targetUrl);
+          return axios(url, { method: 'post', data: qs.stringify(fd), withCredentials: true, headers: this.defaultOptions });
+          // return axios.post(url, qs.stringify(fd));
+        } else {
+          return false;
+        }
+
       })
       .then((loginResponse) => {
-        console.log(loginResponse);
+        console.log('------------------------------------');
         this.isLoggedIn = true;
-        this.baseURL = loginResponse.url;
+        this.baseURL = loginResponse.request.res.responseUrl;
         console.log(this.baseURL);
-        this.marketCrawlURL[0] = Url.resolve(this.baseURL, '/web-root/flexible/odds-display/main.aspx?sport=1&param=1,3&promo=0&promosid=0');
-        this.marketCrawlURL[1] = Url.resolve(this.baseURL, '/web-root/flexible/odds-display/main.aspx?sport=1&param=1,1&promo=0&promosid=0');
-        this.marketCrawlURL[2] = Url.resolve(this.baseURL, '/web-root/flexible/odds-display/main.aspx?sport=1&param=1,2&promo=0&promosid=0');
-        this.leagueCrawlURL[0] = Url.resolve(this.baseURL, '/web-root/flexible/odds-display/tournament.aspx?sportId=1&leagueId=0&marketPageType=3&promo=0');
-        this.leagueCrawlURL[1] = Url.resolve(this.baseURL, '/web-root/flexible/odds-display/tournament.aspx?sportId=1&leagueId=0&marketPageType=1&promo=0');
-        this.leagueCrawlURL[2] = Url.resolve(this.baseURL, '/web-root/flexible/odds-display/tournament.aspx?sportId=1&leagueId=0&marketPageType=2&promo=0');
+        this.marketCrawlURL['today'] = Url.resolve(this.baseURL, 'odds-sport.aspx?page=1');
+        this.marketCrawlURL['live'] = Url.resolve(this.baseURL, 'odds-sport.aspx?page=3');
+        this.marketCrawlURL['early'] = Url.resolve(this.baseURL, 'odds-sport.aspx?page=2');
 
-        return axios(Url.resolve(this.baseURL, '/web-root/restricted/settings/settings.aspx'), {withCredentials:true});
-      })
-      .then(settingResponse => settingResponse.data)
-      .then((settingResponseText) => {
-        let $ = cheerio.load(settingResponseText);
-        let fd = new FormData();
-        _.map($('#changeForm').serializeArray(), (obj) => {
-          // console.log('setting:%s = %s', obj.name, obj.value)
-          fd.append(obj.name, obj.value);
-        })
-        fd.append('oddsStyle', 'HK');
-        fd.append('lang', 'en');
-        return axios(Url.resolve(this.baseURL, '/web-root/restricted/settings/settings.aspx'), { withCredentials: true, method: 'post', data: fd });
-      })
-      .then((settingFinishedResponse) => {
-        setTimeout(() => { this.crawl(1); }, 1);
+        setTimeout(() => { this.crawl('today'); }, 1);
       });
   }
 
 
   crawl(marketId) {
-    return axios(this.leagueCrawlURL[marketId], { withCredentials: true })
-      .then(leagueResponse => leagueResponse.data)
-      .then((leagueResponseText) => {
-        const leagueRegex = /odds-display\/main.aspx\?sport=\d&param=\d*,\d*,(\d*)&promo=0/g;
-        let leagueIds = [];
-        // console.log(leagueResponseText.match(leagueRegex))
-        const leagueRegexMatch = leagueResponseText.match(leagueRegex);
+    console.log(this.marketCrawlURL[marketId]);
+    return axios(this.marketCrawlURL[marketId], _.extend({}, this.defaultOptions, { withCredentials: true }))
+      .then((response) => {
+        console.log(response);
+        return axios(Url.resolve(this.baseURL, 'odds-league.aspx?sport=1'), _.extend({}, this.defaultOptions, {withCredentials: true}));
+      })
+      .catch(error => console.log(error))
+      .then((marketResponseText) => {
+        console.log(marketResponseText.data);
+        const leagueRegex = /odds-match.aspx\?league=(\d*)">([\w\s\(\)]*)<\/a>/g;
+        console.log(marketResponseText.data.match(leagueRegex));
         if (!_.isNull(leagueRegexMatch) && _.isArray(leagueRegexMatch)
           && leagueRegexMatch.length > 0) {
           _.each(leagueResponseText.match(leagueRegex), (leagueRegexLine) => {
@@ -136,7 +123,8 @@ class sbo extends connectionBase {
           });
           return Promise.map(leagueIds, (leagueId) => {
             return new Promise((leagueResolve, leagueReject) => {
-              return axios(Url.resolve(this.leagueCrawlURL[marketId], `/web-root/flexible/odds-display/main.aspx?sport=1&param=1,${marketId},${leagueId}&promo=0`), {withCredentials: true})
+              /*
+              return axios(Url.resolve(this.baseURL, `/`), {withCredentials: true})
                 .then((eventResponse) => {
                   const aspxPageArr = { 0: 'live-data.aspx', 1: 'today-data.aspx', 2: 'early-market-data.aspx' };
                   if (!(leagueId in this.lastCallStepArr)) this.lastCallStepArr[leagueId] = 0;
@@ -149,6 +137,7 @@ class sbo extends connectionBase {
                 .catch((err) => {
                   leagueReject(err);
                 });
+                */
             });
           }, { concurrency: 1 })
             .then((tmpResponses) => {
