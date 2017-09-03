@@ -16,16 +16,16 @@ config.controller = {
       errorReconnectDuration: 5000,
       eventUpdateDuration: 20000,
       eventPriceUpdateDuration: 10000,
-      apiKeyDuration: 12000
-    }
+      apiKeyDuration: 12000,
+    },
   },
   {
     connectionID: 'pinbet',
     enabled: false,
     connectionKey: 'pinbet1',
     config: {
-      username: 'hc202fc111',
-      password: '1234QQqq',
+      username: 'Ch8ccctest',
+      password: '1234aaaa',
       momentFormatStr: 'LTS',
       errorReconnectDuration: 5000,
       leagueUpdateDuration: 30000,
@@ -38,7 +38,7 @@ config.controller = {
   },
   {
     connectionID: 'sbo',
-    enabled: false,
+    enabled: true,
     connectionKey: 'sbo1',
     config: {
       username: 'vdfb660',

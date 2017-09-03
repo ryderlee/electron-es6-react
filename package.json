@@ -5,22 +5,26 @@
   "license": "MIT",
   "repository": "b52/electron-es6-react",
   "scripts": {
-    "start": "electron -r babel-register ."
+    "start": "electron -r babel-register .",
+    "runConn": "node ConnectionController.js"
   },
   "dependencies": {
+    "axios": "^0.16.2",
     "babel-preset-es2015": "^6.3.13",
     "babel-preset-react": "^6.3.13",
     "babel-register": "^6.3.13",
+    "fast-diff": "^1.1.1",
     "react": "^15.3.2",
     "react-dom": "^15.3.2",
-    "electron-debug": "^1.1.0",
+    "electron-debug": "^1.4.0",
     "lodash": "^4.16.6",
     "moment": "^2.15.2",
     "request-promise": "^4.1.1",
     "request": "^2.79.0",
+    "ioredis": "^3.1.4",
     "request-promise-native": "^1.0.3",
     "querystring": "^0.2.0",
-    "forerunnerdb": "^1.4.40",
+    "forerunnerdb": "^2.0.5",
     "numeral": "^1.5.6",
     "material-ui": "^0.16.4",
     "md5": "^2.2.1",
@@ -42,10 +46,15 @@
     "nightmare": "^2.10.0",
     "phantomjs-prebuilt": "^2.1.14",
     "node-horseman": "^3.2.0"
-
   },
   "devDependencies": {
-    "electron": "^1.4.3",
-    "devtron": "^1.4.0"
+    "devtron": "^1.4.0",
+    "electron": "^1.7.5",
+    "eslint": "^4.5.0",
+    "eslint-config-airbnb": "^15.1.0",
+    "eslint-loader": "^1.9.0",
+    "eslint-plugin-import": "^2.7.0",
+    "eslint-plugin-jsx-a11y": "^5.1.1",
+    "eslint-plugin-react": "^7.3.0"
   }
 }
