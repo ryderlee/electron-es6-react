@@ -1,9 +1,10 @@
 
 const _ = require('lodash');
 const Redis = require('ioredis');
+const utils = Redis.utils;
 const Promise = require('bluebird');
 const querystring = require('querystring');
-Redis.Command.setReplyTransformer('hgetall', function (result) {
+Redis.Command.setReplyTransformer('hgetall', (result) => {
   if (Array.isArray(result)) {
     var obj = {};
     for (var i = 0; i < result.length; i += 2) {
@@ -12,6 +13,26 @@ Redis.Command.setReplyTransformer('hgetall', function (result) {
     return obj;
   }
   return result;
+});
+Redis.Command.setArgumentTransformer('hmset', (args) => {
+  if (args.length === 2) {
+    if (typeof Map !== 'undefined' && args[1] instanceof Map) {
+      // utils is a internal module of ioredis
+      return [args[0]].concat(utils.convertMapToArray(args[1]));
+    }
+    if ( typeof args[1] === 'object' && args[1] !== null) {
+      let arr = [];
+      _.each(args[1], (value, key) => {
+        arr.push(key);
+        arr.push(String(value));
+      });
+      // return [args[0]].concat(utils.convertObjectToArray(args[1]));
+      console.log(arr);
+      console.log([args[0]].concat(arr));
+      return [args[0]].concat(arr);
+    }
+  }
+  return args;
 });
 
 // const app = require('electron').app
@@ -40,7 +61,7 @@ class InfoHandler {
     this.gameUpdateCallbacks = [];
     this.oddsUpdateCallbacks = [];
 
-    this.gamePeriodMap = { 0: '1', 1: '2', 2: '3' };
+    this.gamePeriodMap = { 0: '1', 1: '2', 2: '3' }; //0: Game, 1: 1st half, 2: 2nd half
     this.gameTeamMap = { all: '1',
       home: '2',
       away: '3',
@@ -314,10 +335,8 @@ class InfoHandler {
     // console.log('->setObjects');
     const objArr = (!_.isArray(inputObjArr) ? [inputObjArr] : inputObjArr);
     const dbChain2 = this.redis.pipeline();
-    let tmpArr = [];
     _.each(objArr, (inputObj) => {
-      const key = `obj:${inputObj.id}`;
-      dbChain2.hgetall(key);
+      dbChain2.hgetall(`obj:${inputObj.id}`);
     });
     return dbChain2.exec().then((DBTmpResult) => {
       let DBResult = {};
@@ -329,6 +348,7 @@ class InfoHandler {
       // console.log(_.keys(result));
       const now = Date.now();
       const dbChain = this.redis.pipeline();
+      // const dbChain = this.redis;
       let isDiff = 0;
       let isDuplicate = 0;
       _.each(objArr, (inputObj) => {
@@ -340,8 +360,8 @@ class InfoHandler {
         const objKey = `obj:${inputObj.id}`;
         // console.log(_.keys(DBResult));
         if ((!_.has(DBResult, objKey)) || (!_.isEqual(_.omit(DBResult[objKey], 'lastUpdate'), objToCompare))) {
-          const objToCompareFromDB = _.omit(DBResult[objKey], 'lastUpdate');
-          isDiff++;
+          isDiff += 1;
+          console.log(_.extend({}, objToWrite, { lastUpdate: now }));
           dbChain.hmset(objKey, _.extend({}, objToWrite, { lastUpdate: now }));
           if (_.has(inputObj, 'id')) {
             dbChain.set(objKey, _.extend({}, objToWrite, { lastUpdate: now }));
@@ -349,11 +369,12 @@ class InfoHandler {
           dbChain.zadd('objset', now, inputObj.id);
           dbChain.publish(`objUpdate_${objType}`, `set ${inputObj.id}`);
         } else {
-          isDuplicate ++;
+          isDuplicate += 1;
         }
       });
       console.log('setObjects #:%d, %d', isDiff, isDuplicate);
       return dbChain.exec();
+      // return Promise.resolve();
     });
   }
   clearObjects(objType) {
@@ -401,7 +422,7 @@ class InfoHandler {
 
   delaySetTeam(providerCode, teamCode, teamName) {
     this.teamBuff.push({
-      id: `t|p:${providerCode}|t:${teamCode}`,
+      id: `t#p:${providerCode}#t:${teamCode}`,
       providerCode: String(providerCode),
       teamCode: String(teamCode),
       teamName: String(teamName),
@@ -414,7 +435,7 @@ class InfoHandler {
 
   delaySetLeague(providerCode, leagueCode, leagueName) {
     this.leagueBuff.push({
-      id: `l|p:${providerCode}|l:${querystring.escape(leagueCode)}`,
+      id: `l#p:${providerCode}#l:${querystring.escape(leagueCode)}`,
       providerCode: String(providerCode),
       leagueCode: String(leagueCode),
       leagueName: String(leagueName),
@@ -446,8 +467,8 @@ class InfoHandler {
 
   delaySetEvent(providerCode, leagueCode, eventCode, homeTeamCode, awayTeamCode, eventStatus, rawJson) {
     this.eventBuff.push({
-      id: `e|p:${providerCode}|l:${querystring.escape(leagueCode)}|e:${querystring.escape(eventCode)}`,
-      shortId: `eid|p:${providerCode}|e:${eventCode}`,
+      id: `e#p:${providerCode}#l:${querystring.escape(leagueCode)}#e:${querystring.escape(eventCode)}`,
+      shortId: `eid#p:${providerCode}#e:${eventCode}`,
       providerCode: String(providerCode),
       leagueCode: String(leagueCode),
       eventCode: String(eventCode),
@@ -465,7 +486,7 @@ class InfoHandler {
   }
 
   getEventByEventId (providerCode, eventId) {
-    return this.redis.get(`eid|p:${providerCode}|e:${querystring.escape(eventId)}`);
+    return this.redis.get(`eid#p:${providerCode}#e:${querystring.escape(eventId)}`);
   }
   // TODO: think about the parameters again
 
@@ -478,7 +499,7 @@ class InfoHandler {
   }
   delaySetGame(providerCode, leagueCode, eventCode, gameCode, gameTypeStr, rawJson) {
     this.gameBuff.push({
-      id: `g|p:${providerCode}|l:${querystring.escape(leagueCode)}|e:${querystring.escape(eventCode)}|gt:${gameTypeStr}`,
+      id: `g#p:${providerCode}#l:${querystring.escape(leagueCode)}#e:${querystring.escape(eventCode)}#gt:${gameTypeStr}`,
       providerCode: String(providerCode),
       leagueCode: String(leagueCode),
       eventCode: String(eventCode),
@@ -511,7 +532,7 @@ class InfoHandler {
 
   delaySetOdds(providerCode, leagueCode, eventCode, gameCode, gameTypeStr, oddCode, homeOrAway, odds, cutOffTimestamp, rawJson) {
     this.oddsBuff.push({
-      id: `o|p:${providerCode}|l:${querystring.escape(leagueCode)}|e:${querystring.escape(eventCode)}|gt:${gameTypeStr}|o:${oddCode}`,
+      id: `o#p:${providerCode}#l:${querystring.escape(leagueCode)}#e:${querystring.escape(eventCode)}#gt:${gameTypeStr}#o:${oddCode}`,
       providerCode: String(providerCode),
       leagueCode: String(leagueCode),
       eventCode: String(eventCode),

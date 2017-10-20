@@ -1,9 +1,8 @@
-
 const _ = require('lodash');
-const InfoHandler = require('./InfoHandler');
+// const InfoHandler = require('./InfoHandler');
 const DBHandler = require('./DBHandler');
-var config = require('./config');
-var Promise = require('bluebird');
+const config = require('./config');
+const Promise = require('bluebird');
 // const MatchingHandler = require('./MatchingHandler')
 
 const connectionStore = {};
@@ -12,6 +11,11 @@ connectionStore.isn = require('./providers/isn');
 connectionStore.pinbet= require('./providers/pinbet');
 connectionStore.sbo = require('./providers/sbo');
 // connectionStore['maxbet'] = require('./providers/maxbet')
+
+process.on('unhandledRejection', (reason, p) => {
+  console.log('Unhandled Rejection at:', p, 'reason:', reason);
+  // application specific logging, throwing an error, or other logic here
+});
 
 class ConnectionController {
   constructor() {
