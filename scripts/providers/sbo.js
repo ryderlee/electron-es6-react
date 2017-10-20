@@ -222,6 +222,7 @@ class sbo extends connectionBase {
           }, { concurrency: 1 })
           .then((tmpResponses) => {
             console.log('finished?????????');
+            console.log(tmpResponses);
           })
         } 
         console.log('no today market from sbo');

@@ -27,8 +27,6 @@ Redis.Command.setArgumentTransformer('hmset', (args) => {
         arr.push(String(value));
       });
       // return [args[0]].concat(utils.convertObjectToArray(args[1]));
-      console.log(arr);
-      console.log([args[0]].concat(arr));
       return [args[0]].concat(arr);
     }
   }
@@ -352,19 +350,19 @@ class InfoHandler {
       let isDiff = 0;
       let isDuplicate = 0;
       _.each(objArr, (inputObj) => {
-        const objToWrite = _.omit(inputObj, ['rawJson', 'shortId']);
-        let objToCompare = {};
+        const objToWrite = _.omit(inputObj, ['rawJson', 'searchId', 'lastUpdate']);
+        const objToCompare = {};
         _.each(_.keys(objToWrite), (key) => {
           objToCompare[key] = String(inputObj[key]);
         });
         const objKey = `obj:${inputObj.id}`;
         // console.log(_.keys(DBResult));
-        if ((!_.has(DBResult, objKey)) || (!_.isEqual(_.omit(DBResult[objKey], 'lastUpdate'), objToCompare))) {
+        if ((!_.has(DBResult, objKey)) || (!_.isEqual(DBResult[objKey], objToCompare))) {
+          objToWrite.lastUpdate = now;
           isDiff += 1;
-          console.log(_.extend({}, objToWrite, { lastUpdate: now }));
-          dbChain.hmset(objKey, _.extend({}, objToWrite, { lastUpdate: now }));
-          if (_.has(inputObj, 'id')) {
-            dbChain.set(objKey, _.extend({}, objToWrite, { lastUpdate: now }));
+          dbChain.hmset(objKey, objToWrite);
+          if (_.has(inputObj, 'searchId')) {
+            dbChain.set(`obj:${inputObj.searchId}`, objToWrite.id);
           }
           dbChain.zadd('objset', now, inputObj.id);
           dbChain.publish(`objUpdate_${objType}`, `set ${inputObj.id}`);
@@ -468,7 +466,7 @@ class InfoHandler {
   delaySetEvent(providerCode, leagueCode, eventCode, homeTeamCode, awayTeamCode, eventStatus, rawJson) {
     this.eventBuff.push({
       id: `e#p:${providerCode}#l:${querystring.escape(leagueCode)}#e:${querystring.escape(eventCode)}`,
-      shortId: `eid#p:${providerCode}#e:${eventCode}`,
+      searchId: `eid#p:${providerCode}#e:${eventCode}`,
       providerCode: String(providerCode),
       leagueCode: String(leagueCode),
       eventCode: String(eventCode),
@@ -485,8 +483,10 @@ class InfoHandler {
       .then(Promise.resolve(true));
   }
 
-  getEventByEventId (providerCode, eventId) {
-    return this.redis.get(`eid#p:${providerCode}#e:${querystring.escape(eventId)}`);
+  async getEventByEventId (providerCode, eventId) {
+    const key = await this.redis.get(`eid#p:${providerCode}#e:${querystring.escape(eventId)}`);
+    const returnValue = await this.redis.hmget(key);
+    return returnValue;
   }
   // TODO: think about the parameters again
 
