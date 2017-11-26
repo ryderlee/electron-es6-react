@@ -4,6 +4,8 @@ const Redis = require('ioredis');
 const utils = Redis.utils;
 const Promise = require('bluebird');
 const querystring = require('querystring');
+const moment = require('moment');
+
 Redis.Command.setReplyTransformer('hgetall', (result) => {
   if (Array.isArray(result)) {
     var obj = {};
@@ -45,6 +47,8 @@ class InfoHandler {
     this.oddsCollection = null;
     this.leagueGroupCollection = null;
     this.leagueBuff = [];
+    this.SOTLeagueBuff = [];
+    this.SOTEventBuff = [];
     this.eventBuff = [];
     this.teamBuff = [];
     this.gameBuff = [];
@@ -332,19 +336,19 @@ class InfoHandler {
   setObjects(objType, inputObjArr) {
     // console.log('->setObjects');
     const objArr = (!_.isArray(inputObjArr) ? [inputObjArr] : inputObjArr);
-    const dbChain2 = this.redis.pipeline();
+    let dbChain2 = this.redis.pipeline();
     _.each(objArr, (inputObj) => {
       dbChain2.hgetall(`obj:${inputObj.id}`);
     });
     return dbChain2.exec().then((DBTmpResult) => {
       let DBResult = {};
       _.each(DBTmpResult, (tmpObj) => {
-        if (!_.isNull(tmpObj) && !_.isUndefined(tmpObj) && !_.isEmpty(tmpObj[1])) {
-          DBResult[`obj:${tmpObj[1].id}`] = tmpObj[1];
+        if (!_.isNull(tmpObj[1]) && !_.isUndefined(tmpObj[1]) && !_.isEmpty(tmpObj[1])) {
+          DBResult[`obj:${tmpObj[1].id}`] = _.omit(tmpObj[1], ['rawJson', 'searchId', 'lastUpdate']);
         }
       });
       // console.log(_.keys(result));
-      const now = Date.now();
+      const now = moment().format('YYYYMMDDHHmmss');
       const dbChain = this.redis.pipeline();
       // const dbChain = this.redis;
       let isDiff = 0;
@@ -358,6 +362,7 @@ class InfoHandler {
         const objKey = `obj:${inputObj.id}`;
         // console.log(_.keys(DBResult));
         if ((!_.has(DBResult, objKey)) || (!_.isEqual(DBResult[objKey], objToCompare))) {
+          console.log('diff here, %s, %s', _.has(DBResult, objKey), _.isEqual(DBResult[objKey], objToCompare));
           objToWrite.lastUpdate = now;
           isDiff += 1;
           dbChain.hmset(objKey, objToWrite);
@@ -385,13 +390,14 @@ class InfoHandler {
     return dbChain.exec();
   }
   // --------------------------------
+  /*
   setEventGroup(leagueGroupId, name, eventObj) {
     var eventGroupObj = {
       leagueGroupId: leagueGroupId,
       name: name,
       events: eventObj
     }
-    return this.setObjects(this.eventGroupCollection, [eventGroupObj], this.eventGroupUpdateCallbacks, true);
+    return this.setObjects('eventGroup', [eventGroupObj], this.eventGroupUpdateCallbacks, true);
   }
 
   clearEventGroup () {
@@ -409,9 +415,9 @@ class InfoHandler {
   clearLeagueGroup () {
     return this.clearObjects(this.leagueGroupCollection, this.leagueGroupUpdateCallbacks, true);
   }
-
+*/
   flushTeam() {
-    return this.setObjects(this.teamCollection, this.teamBuff, this.teamUpdateCallbacks, false)
+    return this.setObjects('team', this.teamBuff, this.teamUpdateCallbacks, false)
       .then(() => {
         this.teamBuff = [];
         return Promise.resolve(true);
@@ -430,6 +436,29 @@ class InfoHandler {
   setTeam(provideCode, teamCode, teamName) {
     this.delaySetTeam(provideCode, teamCode, teamName);
   }
+  delaySetSOTLeague(providerCode, leagueCode, leagueName ) {
+    this.SOTLeagueBuff.push({
+      id: `sotl#p:${providerCode}#l:${querystring.escape(leagueCode)}`,
+      providerCode: String(providerCode),
+      leagueCode: String(leagueCode),
+      leagueName: String(leagueName),
+    });
+    return Promise.resolve(true); 
+  }
+
+  flushSOTLeague() {
+    return this.setObjects('SOTLeague',
+      this.SOTLeagueBuff, this.leagueUpdateCallbacks, false).then(() => {
+      this.leagueBuff = [];
+      return Promise.resolve(true);
+    });
+  }
+
+  setSOTLeague(providerCode, leagueCode, leagueName) {
+    return this.delaySetSOtLeague(providerCode, leagueCode, leagueName)
+      .then(this.flushSOTLeague())
+      .then(Promise.resolve(true));
+  }
 
   delaySetLeague(providerCode, leagueCode, leagueName) {
     this.leagueBuff.push({
@@ -442,7 +471,7 @@ class InfoHandler {
   }
 
   flushLeague() {
-    return this.setObjects(this.leagueCollection,
+    return this.setObjects('league',
       this.leagueBuff, this.leagueUpdateCallbacks, false).then(() => {
       this.leagueBuff = [];
       return Promise.resolve(true);
@@ -455,8 +484,35 @@ class InfoHandler {
       .then(Promise.resolve(true));
   }
 
+  flushSOTEvent() {
+    return this.setObjects('SOTEvent', this.SOTEventBuff,
+      this.eventUpdateCallbacks, false).then(() => {
+      this.SOTEventBuff = [];
+      return Promise.resolve(true);
+    });
+  }
+
+  delaySetSOTEvent(providerCode, leagueCode, eventCode, homeTeamCode, awayTeamCode, eventStatus, eventDatetime) {
+    this.SOTEventBuff.push({
+      id: `sote#p:${providerCode}#l:${querystring.escape(leagueCode)}#e:${querystring.escape(eventCode)}`,
+      searchId: `eid#p:${providerCode}#e:${eventCode}`,
+      providerCode: String(providerCode),
+      leagueCode: String(leagueCode),
+      eventCode: String(eventCode),
+      homeTeamCode: String(homeTeamCode),
+      awayTeamCode: String(awayTeamCode),
+      eventStatus: String(eventStatus),
+      eventDatetime: moment(eventDatetime).format('YYYYMMDDHHmmss'),
+    });
+    return Promise.resolve(true);
+  }
+  setSOTEvent(providerCode, leagueCode, eventCode, homeTeam, awayTeam, eventStatus, eventDatetime) {
+    return this.delaySetSOTEvent(providerCode, leagueCode, eventCode, homeTeam, awayTeam, eventStatus, eventDatetime)
+      .then(this.flushSOTEvent())
+      .then(Promise.resolve(true));
+  }
   flushEvent() {
-    return this.setObjects(this.eventCollection, this.eventBuff,
+    return this.setObjects('event', this.eventBuff,
       this.eventUpdateCallbacks, false).then(() => {
       this.eventBuff = [];
       return Promise.resolve(true);
@@ -491,7 +547,7 @@ class InfoHandler {
   // TODO: think about the parameters again
 
   flushGame() {
-    return this.setObjects(this.gameCollection, this.gameBuff, this.gameUpdateCallbacks, false)
+    return this.setObjects('game', this.gameBuff, this.gameUpdateCallbacks, false)
       .then(() => {
         this.gameBuff = [];
         return Promise.resolve(true);
@@ -523,7 +579,7 @@ class InfoHandler {
   }
 
   flushOdds() {
-    return this.setObjects(this.oddsCollection, this.oddsBuff, this.oddsUpdateCallbacks, false)
+    return this.setObjects('odds', this.oddsBuff, this.oddsUpdateCallbacks, false)
       .then(() => {
         this.oddsBuff = [];
         return Promise.resolve(true);

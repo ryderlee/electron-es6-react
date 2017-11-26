@@ -5,6 +5,7 @@ const InfoHandler = require('./InfoHandler')
 // const MatchingHandler = require('./MatchingHandler')
 const ViewHandler = require('./ViewHandler')
 const StrategyHandler = require('./StrategyHandler')
+const BeetingOdds = require('./providers/bettingOdds');
 
 var connectionStore = {}
 connectionStore['isn'] = require('./providers/isn')
@@ -20,16 +21,19 @@ var Controller = (function () {
     var viewHandler = null
     var config = {}
     var connections = []
+    var truthConnection = null
     this.setConfig = function (config) {
       this.config = config
       return true
     }
     this.init = function () {
-      console.log('Controller->init')
+      console.log('Controller2->init')
       this.connections = []
       this.infoHandler = new InfoHandler()
       this.infoHandler.init()
       this.viewHandler = new ViewHandler()
+      this.truthConnection = new BettingOdds()
+
       this.viewHandler.setConfig(this.config.view)
       this.viewHandler.setInfoHandler(this.infoHandler)
       // this.infoHandler.setMatchingLeagueCallback(_.bind(this.viewHandler.matchingLeagueUpdate, this.viewHandler))
@@ -47,9 +51,14 @@ var Controller = (function () {
       //this.matchingHandler = new MatchingHandler()
 
       //this.priceHandler.setMatchingHandler(this.matchingHandler)
-
+      this.truthConnection.setConfig()
       this.strategyHandler.init()
       this.viewHandler.init()
+      this.truthConnection.init();
+
+      this.truthConnection.setConfig(this.config.truthConnection[0]);
+      this.setProviderKey(this.config.truthConnection[0].connectionKey);
+      this.setInfoHandler(this.infoHandler);
 
       _.each(this.config.connections, _.bind(function (connection) {
         if (connection.enabled && connection.connectionID !== null && connectionStore[connection.connectionID] !== undefined) {
@@ -67,6 +76,7 @@ var Controller = (function () {
     }
     this.start = function () {
       this.strategyHandler.start()
+      this.truthConnection.start();
       var timeoutFunc = () => {
         this.viewHandler.start()
         this.strategyHandler.start()

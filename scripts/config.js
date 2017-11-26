@@ -5,7 +5,7 @@ config.controller = {
   connections: [{
     // 0
     connectionID: 'isn',
-    enabled: false,
+    enabled: true,
     connectionKey: 'isn1',
     config: {
       username: 'c00001',
@@ -50,7 +50,7 @@ config.controller = {
   },
   {
     connectionID: 'maxbet',
-    enabled: true,
+    enabled: false,
     connectionKey: 'maxbet1',
     config: {
       username: 'sfbopfb660',
@@ -77,7 +77,20 @@ config.controller = {
     }
   },
   strategy: {
-  }
+  },
+  sourceOfTruthConnections: {
+      connectionID: 'bettingOddsAPI',
+      connectionKey: 'bettingOddsAPI1',
+      config: {
+        x_mashape_key: 'jFt7WCmZsUmshwncMfEHszWrETUfp1YZ0f3jsnRxFjel443iLX',
+        x_mashape_host: 'bettingodds-bettingoddsapi-v1.p.mashape.com',
+        dateToGet: 4,
+        url: {
+          getLeagues: 'https://bettingodds-bettingoddsapi-v1.p.mashape.com/leagues',
+          getEventsByDate: 'https://bettingodds-bettingoddsapi-v1.p.mashape.com/events/',
+        },
+      },
+    }
 }
 
 module.exports = config

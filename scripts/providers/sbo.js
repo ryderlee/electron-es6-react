@@ -48,7 +48,7 @@ class sbo extends connectionBase {
     this.specialCodeInfoCache = {};
 
     this.baseURL = '';
-    this.marketCrawlURL = {};
+    this.marketIdPage = {};
     this.leagueCrawlURL = {};
 
     this.defaultOptions = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.113 Safari/537.36' };
@@ -70,9 +70,9 @@ class sbo extends connectionBase {
 
   login() {
     console.log('sbo->login');
-    return axios('http://wap.beer777.com/web_root/public/login.aspx', { withCredentials: true })
+    // return axios('http://wap.beer777.com/web_root/public/login.aspx', { withCredentials: true })
+    return this.myCrawl('http://wap.beer777.com/web_root/public/login.aspx')
       .then((response) => {
-        console.log(response);
         if (_.has(response.request, 'res') && _.has(response.request.res, 'responseUrl')) {
           const targetUrl = response.request.res.responseUrl;
           let $ = cheerio.load(response.data);
@@ -96,11 +96,11 @@ class sbo extends connectionBase {
         this.isLoggedIn = true;
         this.baseURL = loginResponse.request.res.responseUrl;
         console.log(this.baseURL);
-        this.marketCrawlURL['today'] = Url.resolve(this.baseURL, 'odds-sport.aspx?page=1');
-        this.marketCrawlURL['live'] = Url.resolve(this.baseURL, 'odds-sport.aspx?page=3');
-        this.marketCrawlURL['early'] = Url.resolve(this.baseURL, 'odds-sport.aspx?page=2');
+        this.marketIdPage['today'] = 1;
+        this.marketIdPage['live'] = 3;
+        this.marketIdPage['early'] = 2;
 
-        setTimeout(() => { this.crawl('early'); }, 1);
+        setTimeout(() => { this.crawl('today'); }, 1);
       });
   }
 
@@ -145,90 +145,124 @@ class sbo extends connectionBase {
     return []; 
   }
 
-  crawlAndMatch(url, patternRegex, isGame = false) {
-    console.log('url:%s' , url);
-    return axios(url, _.extend({}, this.defaultOptions, {withCredentials: true}))
-      .then((response) => {
-        if (!isGame) {
-          return Promise.resolve(this.regexMatch(response.data, patternRegex));
-        }
-        const HDPRegex ={ period:0, gameType:'handicap', pattern: /Handicap[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>/g };
-        const OURegex = { period:0, gameType:'ou', pattern: /Over\/Under[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>/g };
-        const firstHalfHDPRegex = { period:1, gameType:'handicap', pattern: /First Half Hdp[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>/g };
-        const firstHalfOURegex = { period:1, gameType:'ou', pattern: /First Half O\/U[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>/g };
-        let returnResult = {};
-        _.each({ HDPRegex, OURegex, firstHalfHDPRegex, firstHalfOURegex }, (regex) =>{
-          // console.log(response.data);
-          const patternMatch = this.regexMatch(response.data, regex.pattern);
-          // const patternMatch = response.data.match(regex.pattern);
-          const resultArr = [];
-          if (patternMatch.length > 0) {
-            console.log('game found: %s-%s, length:%d', regex.gameType, regex.period, patternMatch.length);
-            _.each(patternMatch, (matchLine) => {
-              // console.log('--%s--', matchLine);
-              const tmpArr = this.regexMatch(matchLine[0], patternRegex);
-              // console.log(tmpArr);
-              _.each(tmpArr, (tmpArrItem) => {
-                resultArr.push([tmpArrItem[0], tmpArrItem[1], tmpArrItem[2]]);
-              });
-              // console.log(tmpArr[0][2]);
-              let tmpStr = (tmpArr[0][2]).split(' @');
-              tmpStr = tmpStr[0].split(' ');
-              // console.log(tmpStr[tmpStr.length - 1]);
-              const gameType = this.DBHandler.encodeGameType(regex.period, 'all', regex.gameType, tmpStr[tmpStr.length - 1]);
-              if (!_.has(returnResult, gameType) || !_.isArray(returnResult.gameType)) returnResult[gameType] = [];
-              returnResult[gameType].push(resultArr);
-            });
-            // console.log('returnResult');
-            // console.log(returnResult);
-          }
-        });
-        return Promise.resolve(returnResult);
-      });
+  async myCrawl(url) {
+    console.log('url:%s', url);
+    return axios(url, _.extend({}, this.defaultOptions, { withCredentials: true }));
+  }
+  async goingBack(responseData) {
+    const regex = /<a href="(.[^"]+?)">(.[^"]+?)<\/a> <\/form>/g;
+    const matches = this.regexMatch(responseData, regex);
+    if (matches.length > 0) {
+      console.log('going back success<------');
+      await this.myCrawl(Url.resolve(this.baseURL, matches[0][1]));
+    } else {
+      console.log(responseData);
+      console.log('no going back <-------');
+    }
+    return Promise.resolve(this);
   }
 
-  crawl(marketId) {
-    console.log(this.marketCrawlURL[marketId]);
-    return axios(this.marketCrawlURL[marketId], _.extend({}, this.defaultOptions, { withCredentials: true }))
-      .then(() => this.crawlAndMatch(Url.resolve(this.baseURL, 'odds-league.aspx?sport=1'), /odds-match.aspx\?league=(\d*)">(.+?)<\/a>/g))
-        //return axios(Url.resolve(this.baseURL, 'odds-league.aspx?sport=1'), _.extend({}, this.defaultOptions, {withCredentials: true}));
-      .catch(error => console.log(error))
-      .then((leagueRegexResultArr) => {
-        if (leagueRegexResultArr.length > 0) {
-          return Promise.map(leagueRegexResultArr, (leagueRegexResult) => {
-            const leagueName = leagueRegexResult[2];
-            const leagueId = leagueRegexResult[1];
-            this.DBHandler.delaySetLeague(this.providerCode, leagueId, leagueName);
-            return this.crawlAndMatch(Url.resolve(this.baseURL, `odds-match.aspx?league=${leagueId}`), /odds-main.aspx\?match=(\d*)">(.+?)<\/a>/g)
-            .then((matchRegexResultArr) => Promise.map(matchRegexResultArr, (matchRegexResult) => {
-              let returnValue = null;
-              const matchName = matchRegexResult[2];
-              const matchId = matchRegexResult[1];
-              const eventInfo = this.extractEventInfo(matchName);
-              this.DBHandler.delaySetEvent(this.providerCode, leagueId, matchId,
-                eventInfo.homeTeam, eventInfo.awayTeam, '0',
-                {});
-              const gameRegex = /ticket.aspx\?(.+?)">(.+?)<\/a>/g;
-              return this.crawlAndMatch(Url.resolve(this.baseURL, `odds-main.aspx?match=${matchId}`), gameRegex, true)
-              .then((gameRegexResult) => {
-                console.log('gameRegexResult');
-                
-                return axios(Url.resolve(this.baseURL, 'odds-league.aspx?page=2&sport=1'), _.extend({}, this.defaultOptions, { withCredentials: true }))
-                .then(Promise.all([this.DBHandler.flushLeague(), this.DBHandler.flushEvent()]))
-                .then(() => gameRegexResult);
+  async crawlAndMatch(url, patternRegex, isGoingBack = false, isGame = false, debugInfo = null) {
+    const response = await this.myCrawl(url);
+    if (!isGame) {
+      // console.log(response.data);
+      return Promise.resolve(this.regexMatch(response.data, patternRegex));
+    }
+    const HDPRegex ={ period:0, gameType:'handicap', pattern: /Handicap[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>/g };
+    const OURegex = { period:0, gameType:'ou', pattern: /Over\/Under[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>/g };
+    const firstHalfHDPRegex = { period:1, gameType:'handicap', pattern: /First Half Hdp[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>/g };
+    const firstHalfOURegex = { period:1, gameType:'ou', pattern: /First Half O\/U[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>/g };
+    const returnResult = {};
+    _.each({ HDPRegex, OURegex, firstHalfHDPRegex, firstHalfOURegex }, (regex) => {
+      // console.log(response.data);
+      const patternMatch = this.regexMatch(response.data, regex.pattern);
+      // const patternMatch = response.data.match(regex.pattern);
+      const resultArr = [];
+      if (!_.isNull(debugInfo)) console.log(debugInfo);
+      if (patternMatch.length > 0) {
+        console.log('game found: %s %s-%s, length:%d', debugInfo, regex.gameType, regex.period, patternMatch.length);
+        _.each(patternMatch, (matchLine) => {
+          // console.log('--%s--', matchLine);
+          const tmpArr = this.regexMatch(matchLine[0], patternRegex);
+          // console.log(tmpArr);
+          _.each(tmpArr, (tmpArrItem) => {
+            resultArr.push([tmpArrItem[0], tmpArrItem[1], tmpArrItem[2]]);
+          });
+          // console.log(tmpArr[0][2]);
+          let tmpStr = (tmpArr[0][2]).split(' @');
+          tmpStr = tmpStr[0].split(' ');
+          // console.log(tmpStr[tmpStr.length - 1]);
+          const gameType = this.DBHandler.encodeGameType(regex.period, 'all', regex.gameType, tmpStr[tmpStr.length - 1]);
+          /*if (!_.has(returnResult, gameType) || !_.isArray(returnResult.gameType)) returnResult[gameType] = [];
+          returnResult[gameType].push(resultArr);
+          */
+          if (!_.has(returnResult, gameType)) returnResult[gameType] = null;
+          returnResult[gameType] = resultArr;
+        });
+        // console.log('returnResult');
+        // console.log(returnResult);
+      } else {
+        console.log('game not found! - %s, %s, %s', debugInfo, regex.gameType, regex.period);
+        console.log(response.data);
+      }
+    });
+    if (isGoingBack) await this.goingBack(response.data);
+    return Promise.resolve(returnResult);
+  }
+
+  async crawl (marketId) {
+    try {
+      await this.myCrawl(Url.resolve(this.baseURL, `odds-sport.aspx?page=${this.marketIdPage[marketId]}`));
+      // await axios(Url.resolve(this.baseURL, `odds-sport.aspx?page=${this.marketIdPage[marketId]}`), _.extend({}, this.defaultOptions, { withCredentials: true }));
+      const leagueRegexResultArr = await this.crawlAndMatch(Url.resolve(this.baseURL, 'odds-league.aspx?sport=1'), /odds-match.aspx\?league=(\d*)">(.+?)<\/a>/g);
+      if (leagueRegexResultArr.length > 0) {
+        const tmpResponses = await Promise.map(leagueRegexResultArr, async (leagueRegexResult) => {
+          const leagueName = leagueRegexResult[2];
+          const leagueId = leagueRegexResult[1];
+          this.DBHandler.delaySetLeague(this.providerCode, leagueId, leagueName);
+          const matchRegexResultArr = await this.crawlAndMatch(Url.resolve(this.baseURL, `odds-match.aspx?league=${leagueId}`)
+            , /odds-main.aspx\?match=(\d*)">(.+?)<\/a>/g);
+          console.log('%s -> size : %d', leagueId, matchRegexResultArr.length);
+          const tmpResult = await Promise.map(matchRegexResultArr, async (matchRegexResult) => {
+            const matchName = matchRegexResult[2];
+            const matchId = matchRegexResult[1];
+            const eventInfo = this.extractEventInfo(matchName);
+            this.DBHandler.delaySetEvent(this.providerCode, leagueId, matchId,
+              eventInfo.homeTeam, eventInfo.awayTeam, '0');
+            const gameRegex = /ticket.aspx\?(.+?)">(.+?)<\/a>/g;
+            const gameRegexResults = await this.crawlAndMatch(Url.resolve(this.baseURL, `odds-main.aspx?match=${matchId}`), gameRegex, true, true, `${eventInfo.homeTeam}-${eventInfo.awayTeam}`);
+            console.log('gameRegexResult - %s', `${eventInfo.homeTeam}-${eventInfo.awayTeam}`);
+            // await this.myCrawl(Url.resolve(this.baseURL, `odds-league.aspx?page=${this.marketIdPage[marketId]}&sport=1`));
+            // await axios(Url.resolve(this.baseURL, `odds-league.aspx?page=${this.marketIdPage[marketId]}&sport=1`), _.extend({}, this.defaultOptions, { withCredentials: true }));
+            // console.log(gameRegexResults);
+            _.each(gameRegexResults, (gameRegexResult, key) => {
+              const gameType = key;
+              // console.log(gameRegexResult);
+              const gameCode = `${this.providerCode}-${matchId}-${gameType}`;
+              _.each(gameRegexResult, (gameRegexResultIndividual) => {
+                const urlResult = Url.parse(Url.resolve(this.baseURL, `ticket.aspx?${gameRegexResultIndividual[1]}`), true);
+                // console.log(urlResult);
+                const isHomeOrAway = (urlResult.query.option === 'h' ? 0 : 1);
+                this.DBHandler.delaySetOdds(this.providerCode, leagueId, matchId, gameCode, gameType,
+                  // `${leagueId}_${matchId}_${gameCode}_u${urlResult.query.id}_${isHomeOrAway}`, isHomeOrAway, urlResult.query.odds, -1);
+                  `${leagueId}_${matchId}_${gameCode}_${isHomeOrAway}`, isHomeOrAway, urlResult.query.odds, -1);
               });
-            }))
-            .then(tmpResult => tmpResult);
-          }, { concurrency: 1 })
-          .then((tmpResponses) => {
-            console.log('finished?????????');
-            console.log(tmpResponses);
-          })
-        } 
-        console.log('no today market from sbo');
-        return Promise.resolve([]);
-      });
-      setTimeout(() => this.crawl(marketId), this.config.updateDuration);
+            });
+            return Promise.resolve(gameRegexResults);
+          }, { concurrency: 4 });
+          await this.myCrawl(Url.resolve(this.baseURL, `odds-league.aspx?page=${this.marketIdPage[marketId]}&sport=1`));
+          const result = await Promise.all([this.DBHandler.flushLeague(), this.DBHandler.flushEvent(), this.DBHandler.flushOdds()]);
+          return tmpResult;
+        }, { concurrency: 1 });
+        console.log('finished?????????');
+      } 
+      console.log(`no ${marketId} market from sbo`);
+      return Promise.resolve([]);
+    } catch (error) {
+      console.error(error);
+    }
+    
+    setTimeout(() => this.crawl(marketId), this.config.updateDuration);
   }
 
 

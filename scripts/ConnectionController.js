@@ -10,6 +10,9 @@ connectionStore.isn = require('./providers/isn');
 // const Isn = require('./providers/isn');
 connectionStore.pinbet= require('./providers/pinbet');
 connectionStore.sbo = require('./providers/sbo');
+
+const BettingOdds = require('./providers/bettingOdds');
+
 // connectionStore['maxbet'] = require('./providers/maxbet')
 
 process.on('unhandledRejection', (reason, p) => {
@@ -22,6 +25,7 @@ class ConnectionController {
     this.connections = [];
     this.infoHandler = null;
     this.DBHandler = new DBHandler();
+    this.SOTConnection = new BettingOdds();
     return true;
 
   }
@@ -55,6 +59,10 @@ class ConnectionController {
     });
     return Promise.all(promiseArr);
     */
+
+    this.SOTConnection.setConfig(this.config.sourceOfTruthConnections);
+    this.SOTConnection.setDBHandler(this.DBHandler);
+
     return Promise.map(this.config.connections, (connection) => {
       const promise = new Promise((resolve, reject) => {
         if (connection.enabled && connection.connectionID !== null
@@ -75,8 +83,9 @@ class ConnectionController {
       return promise;
     });
   }
-  start(){
+  async start() {
     console.log('start');
+
     /*
     let isn = new connectionStore['isn']();
     this.connections['isn'] = isn;
@@ -87,9 +96,10 @@ class ConnectionController {
     });
     */
     // console.log(this.connections);
-    Promise.map(this.connections, conn => {
-      return conn.start();
-    }).then(console.log('end start'));
+    await this.SOTConnection.start();
+
+    return Promise.map(this.connections, async conn => conn.start())
+      .then(console.log('end start'));
     /*
     let promiseArr = [];
     _.each(this.connections, (conn) => {
