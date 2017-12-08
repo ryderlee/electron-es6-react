@@ -2,6 +2,7 @@ class connectionBase {
   constructor() {
     this.DBHandler = null;
     this.providerCode = null;
+    this.username = null;
   }
   setDBHandler (ph) {
     this.DBHandler = ph;

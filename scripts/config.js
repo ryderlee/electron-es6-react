@@ -10,7 +10,7 @@ config.controller = {
     config: {
       username: 'c00001',
       password: '1234aaaa',
-      eventScheduleId: 2,
+      eventScheduleId: 1,
       sportId: 1,
       momentFormatStr: 'LTS',
       errorReconnectDuration: 5000,
@@ -79,6 +79,7 @@ config.controller = {
   strategy: {
   },
   sourceOfTruthConnections: {
+      enabled: true,
       connectionID: 'bettingOddsAPI',
       connectionKey: 'bettingOddsAPI1',
       config: {

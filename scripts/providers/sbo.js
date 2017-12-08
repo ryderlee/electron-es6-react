@@ -12,6 +12,8 @@ const Promise = require('bluebird');
 const Numeral = require('numeral');
 const axios = require('axios');
 const qs = require('querystring');
+const moment = require('moment-timezone');
+
 // const fetch = require('fetch-cookie')(require('node-fetch'))
 // let needle = require('needle')
 const connectionBase = require('./connectionBase');
@@ -57,6 +59,9 @@ class sbo extends connectionBase {
     // this.browser = new Horseman().userAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 8_0 like Mac OS X) AppleWebKit/537.51.1 (KHTML, like Gecko) Version/8.0 Mobile/11A465 Safari/9537.53")
     // this.browser = new Zombie()
 
+  getUniqueCode(){
+    return `${this.providerCode}-${this._username}`;
+  }
 
   isReady(){
     return true;
@@ -66,10 +71,11 @@ class sbo extends connectionBase {
   }
   setConfig(config) {
     super.setConfig(config);
+    this._username = this.config.username;
   }
 
   login() {
-    console.log('sbo->login');
+    console.debug('sbo->login');
     // return axios('http://wap.beer777.com/web_root/public/login.aspx', { withCredentials: true })
     return this.myCrawl('http://wap.beer777.com/web_root/public/login.aspx')
       .then((response) => {
@@ -100,27 +106,65 @@ class sbo extends connectionBase {
         this.marketIdPage['live'] = 3;
         this.marketIdPage['early'] = 2;
 
-        setTimeout(() => { this.crawl('today'); }, 1);
+        setTimeout(() => { this.crawl('early'); }, 1);
       });
   }
 
 
-  extractEventInfo(eventStr) {
+  extractEventInfo(marketId, eventStr){
     let returnResult = {};
     if (eventStr.substring(0, 1) === '[') {
       returnResult.hasExtraInfo = true;
       const idx = eventStr.indexOf(']') + 1;
       const extraInfo = eventStr.substring(0, idx);
+      let datetime = null;
+      let timeInfo = extraInfo.replace('[','').replace(']','');
+      if(timeInfo.indexOf('!Live') > -1) {
+        //today game
+        const today = moment.tz('Asia/Hong_Kong').format('YYYY-MM-DD');
+        const tomorrow = moment.tz('Asia/Hong_Kong').add(1, 'day').format('YYYY-MM-DD');
+        timeInfo = timeInfo.replace(' !Live', '');
+        datetime = moment.tz(`${today} ${timeInfo}:00`, 'YYYY-MM-DD HH:mm:ss', 'Asia/Hong_Kong').utc().toDate();
+        const now = new Date();
+        if(datetime < now) datetime = moment.tz(`${tomorrow} ${timeInfo}:00`, 'YYYY-MM-DD HH:mm:ss', 'Asia/Hong_Kong').utc().toDate();
+        returnResult.isLive = false;
+      } else if(marketId === 'early') {
+        returnResult.isLive = false;
+        if(timeInfo.indexOf('**:**') > -1) {
+          //future game
+          timeInfo = timeInfo.replace(' **:**', '');
+          // datetime = moment.tz.zone('Asia/Hong_Kong').parse(timeInfo, 'MM/DD').toDate();
+          datetime = moment.tz(`${timeInfo}/${moment.tz('Asia/Hong_Kong').format('YYYY')} 00:00:00`, 'MM/DD/YYYY HH:mm:ss', 'Asia/Hong_Kong').utc().toDate();
+          // console.log('%s %s', timeInfo, moment(datetime).tz('Asia/Hong_Kong').format('YYYYMMDDHHmmss'));
+        } else {
+          const tmpArr = timeInfo.split(' ');
+          const date = tmpArr[0];
+          const time = tmpArr[1];
+          datetime = moment.tz(`${date}/${moment.tz('Asia/Hong_Kong').format('YYYY')} ${time}:00`, 'MM/DD/YYYY HH:mm:ss', 'Asia/Hong_Kong').utc().toDate();
+        }
+      } else {
+        //live game
+        if(timeInfo.indexOf('1H') > -1){
+          datetime = moment.tz('Asia/Hong_Kong').subtract(parseInt(timeInfo.replace('1H ', '').replace('\'', '')), 'minutes').utc().toDate();
+          returnResult.isLive = true;
+        } else if (timeInfo.indexOf('2H') > -1) {
+          datetime = moment.tz('Asia/Hong_Kong').subtract(1, 'hour').subtract(parseInt(timeInfo.replace('2H ', '').replace('\'', '')), 'minutes').utc().toDate();
+          returnResult.isLive = true;
+        } else {
+          returnResult.isLive = true;
+          datetime = moment.tz('Asia/Hong_Kong').utc().toDate();
+        }
+      }
+      returnResult.datetime = datetime;
       eventStr = eventStr.substring(idx + 1);
-
     } else {
       returnResult.hasExtraInfo = false;
     }
 
-    returnResult.homeTeam = eventStr.substring(0, eventStr.indexOf('-vs-')).trim();
-    returnResult.awayTeam = eventStr.substring(eventStr.indexOf('-vs-') + 4).trim();
+    returnResult.homeTeam = qs.unescape(eventStr.substring(0, eventStr.indexOf('-vs-')).trim());
+    returnResult.awayTeam = qs.unescape(eventStr.substring(eventStr.indexOf('-vs-') + 4).trim());
 
-    console.log('extractEventInfo:"home:%s, away:%s"', returnResult.homeTeam, returnResult.awayTeam);
+    // console.log('extractEventInfo:"home:%s, away:%s"', returnResult.homeTeam, returnResult.awayTeam);
     return returnResult;
 
   }
@@ -146,17 +190,17 @@ class sbo extends connectionBase {
   }
 
   async myCrawl(url) {
-    console.log('url:%s', url);
+    console.debug('url:%s', url);
     return axios(url, _.extend({}, this.defaultOptions, { withCredentials: true }));
   }
   async goingBack(responseData) {
     const regex = /<a href="(.[^"]+?)">(.[^"]+?)<\/a> <\/form>/g;
     const matches = this.regexMatch(responseData, regex);
     if (matches.length > 0) {
-      console.log('going back success<------');
+      console.debug('going back success<------');
       await this.myCrawl(Url.resolve(this.baseURL, matches[0][1]));
     } else {
-      console.log(responseData);
+      // console.log(responseData);
       console.log('no going back <-------');
     }
     return Promise.resolve(this);
@@ -178,9 +222,9 @@ class sbo extends connectionBase {
       const patternMatch = this.regexMatch(response.data, regex.pattern);
       // const patternMatch = response.data.match(regex.pattern);
       const resultArr = [];
-      if (!_.isNull(debugInfo)) console.log(debugInfo);
+      // if (!_.isNull(debugInfo)) console.log(debugInfo);
       if (patternMatch.length > 0) {
-        console.log('game found: %s %s-%s, length:%d', debugInfo, regex.gameType, regex.period, patternMatch.length);
+        console.debug('game found: %s %s-%s, length:%d', debugInfo, regex.gameType, regex.period, patternMatch.length);
         _.each(patternMatch, (matchLine) => {
           // console.log('--%s--', matchLine);
           const tmpArr = this.regexMatch(matchLine[0], patternRegex);
@@ -203,7 +247,7 @@ class sbo extends connectionBase {
         // console.log(returnResult);
       } else {
         console.log('game not found! - %s, %s, %s', debugInfo, regex.gameType, regex.period);
-        console.log(response.data);
+        // console.log(response.data);
       }
     });
     if (isGoingBack) await this.goingBack(response.data);
@@ -226,19 +270,17 @@ class sbo extends connectionBase {
           const tmpResult = await Promise.map(matchRegexResultArr, async (matchRegexResult) => {
             const matchName = matchRegexResult[2];
             const matchId = matchRegexResult[1];
-            const eventInfo = this.extractEventInfo(matchName);
+            const eventInfo = this.extractEventInfo(marketId, matchName);
             this.DBHandler.delaySetEvent(this.providerCode, leagueId, matchId,
-              eventInfo.homeTeam, eventInfo.awayTeam, '0');
+              eventInfo.homeTeam, eventInfo.homeTeam, eventInfo.awayTeam, eventInfo.awayTeam, '0', eventInfo.datetime, eventInfo.isLive);
             const gameRegex = /ticket.aspx\?(.+?)">(.+?)<\/a>/g;
             const gameRegexResults = await this.crawlAndMatch(Url.resolve(this.baseURL, `odds-main.aspx?match=${matchId}`), gameRegex, true, true, `${eventInfo.homeTeam}-${eventInfo.awayTeam}`);
-            console.log('gameRegexResult - %s', `${eventInfo.homeTeam}-${eventInfo.awayTeam}`);
-            // await this.myCrawl(Url.resolve(this.baseURL, `odds-league.aspx?page=${this.marketIdPage[marketId]}&sport=1`));
-            // await axios(Url.resolve(this.baseURL, `odds-league.aspx?page=${this.marketIdPage[marketId]}&sport=1`), _.extend({}, this.defaultOptions, { withCredentials: true }));
-            // console.log(gameRegexResults);
+            // console.log('gameRegexResult - %s', `${eventInfo.homeTeam}-${eventInfo.awayTeam}`);
             _.each(gameRegexResults, (gameRegexResult, key) => {
               const gameType = key;
               // console.log(gameRegexResult);
               const gameCode = `${this.providerCode}-${matchId}-${gameType}`;
+              this.DBHandler.delaySetGame(this.providerCode, leagueId, matchId, gameCode, gameType);
               _.each(gameRegexResult, (gameRegexResultIndividual) => {
                 const urlResult = Url.parse(Url.resolve(this.baseURL, `ticket.aspx?${gameRegexResultIndividual[1]}`), true);
                 // console.log(urlResult);
@@ -251,7 +293,10 @@ class sbo extends connectionBase {
             return Promise.resolve(gameRegexResults);
           }, { concurrency: 4 });
           await this.myCrawl(Url.resolve(this.baseURL, `odds-league.aspx?page=${this.marketIdPage[marketId]}&sport=1`));
-          const result = await Promise.all([this.DBHandler.flushLeague(), this.DBHandler.flushEvent(), this.DBHandler.flushOdds()]);
+          await this.DBHandler.flushLeague();
+          await this.DBHandler.flushEvent();
+          await this.DBHandler.flushGame();
+          await this.DBHandler.flushOdds();
           return tmpResult;
         }, { concurrency: 1 });
         console.log('finished?????????');

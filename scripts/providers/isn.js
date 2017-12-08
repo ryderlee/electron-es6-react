@@ -3,6 +3,7 @@ const _ = require('lodash');
 // const rp = require('request-promise')
 const axios = require('axios');
 let numeral = require('numeral');
+const moment = require('moment');
 // const ReactDataGridPlugins = require('react-data-grid/addons')
 
 class isn extends connectionBase {
@@ -35,6 +36,9 @@ class isn extends connectionBase {
       responseType: 'json', // Automatically parses the JSON string in the response
     };
   }
+  getUniqueCode() {
+    return `${this.providerCode}-${this._username}`;
+  }
   start() {
     console.log('isn->start');
     return this.reset();
@@ -47,7 +51,7 @@ class isn extends connectionBase {
   }
   setConfig (config) {
     super.setConfig(config);
-
+    this._username = this.config.username;
     this.loginOptions = _.extend({}, this.defaultOptions, {
       method: 'post',
       headers: {
@@ -74,7 +78,7 @@ class isn extends connectionBase {
       binaryOddsFormat: '',
     };
   }
-  callAPIGetEventList() {
+  async callAPIGetEventList() {
     console.log('isn->callAPIGetEventList');
     if (!(this.isLoggedIn && this.isAPIKeyReady && this.isMemberInfoReady)) {
       console.warn('callAPIGetEventList failed. isLoggedIn %s, isAPIKeyReady %s, isMemberInfoReady %s', this.isLoggedIn, this.isAPIKeyReady, this.isMemberInfoReady);
@@ -86,7 +90,7 @@ class isn extends connectionBase {
     // rp(_.extend({}, this.apiOptions, { url: ('http://www.apiisn.com/betting/api/event/list/' + this.config.sportId + '/' + this.config.eventScheduleId) })).promise().bind(this).then(function (response) {
     return axios(`http://www.apiisn.com/betting/api/event/list/${this.config.sportId}/${this.config.eventScheduleId}`, _.extend({}, this.apiOptions))
       .then(response => response.data)
-      .then((response) => {
+      .then(async (response) => {
         // let responseStr = JSON.stringify(response);
         // if (responseStr === this.previousEventResponse) {
         if (_.isEqual(response, this.previousEventResponse)) {
@@ -102,7 +106,8 @@ class isn extends connectionBase {
             leagueCode = `${this.providerCode}-${league.leagueName}`;
             this.DBHandler.delaySetLeague(this.providerCode, leagueCode, league.leagueName);
             _.each(league.events, (event) => {
-              this.DBHandler.delaySetEvent(this.providerCode, leagueCode, event.id, event.homeTeamName, event.awayTeamName, '0', { event });
+              const isLive = event.eventScheduledId === 3 ? 1 : 0;
+              this.DBHandler.delaySetEvent(this.providerCode, leagueCode, event.id, event.homeTeamId, event.homeTeamName, event.awayTeamId, event.awayTeamName, '0', moment.unix(event.startTime / 1000).toDate(), isLive);
               this.eventIdToLeagueCode[event.id] = leagueCode;
               // console.log('%s - %s vs %s', row.leagueName, event.homeTeamName, event.awayTeamName)
               _.each(event.markets, (market) => {
@@ -182,14 +187,17 @@ class isn extends connectionBase {
               });
             });
           });
-          return Promise.all([this.DBHandler.flushEvent(), this.DBHandler.flushLeague(),this.DBHandler.flushGame()]).then(() => {
-            this.isEventPriceFirstCallCompleted = true;
-            this.updateEventListTimeout = _.delay(_.bind(this.callAPIGetEventList, this), this.config.eventUpdateDuration);
-            console.log('end updateEventList');
-          });
+          await this.DBHandler.flushLeague();
+          await this.DBHandler.flushEvent();
+          await this.DBHandler.flushGame();
+
+          this.isEventPriceFirstCallCompleted = true;
+          this.updateEventListTimeout = _.delay(_.bind(this.callAPIGetEventList, this), this.config.eventUpdateDuration);
+          console.log('end updateEventList');
         }
         this.updateEventListTimeout = _.delay(_.bind(this.callAPIGetEventList, this), this.config.eventUpdateDuration);
         console.log('end updateEventList');
+        return Promise.resolve(true);
       }).catch((err) => {
         console.error(err);
         // this.refreshTimeout = setTimeout(_.bind(this.refresh, this), 1);

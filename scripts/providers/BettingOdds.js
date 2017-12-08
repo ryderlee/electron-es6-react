@@ -68,8 +68,14 @@ class bettingOdds extends connectionBase {
   setConfig(config) {
     super.setConfig(config);
     this.defaultOptions = _.extend({}, this.defaultOptions, { headers: { 'X-Mashape-Key': config.config.x_mashape_key, 'X-Mashape-Host': config.config.x_mashape_host } });
+    return true;
   }
-
+  getUniqueCode() {
+    return `${this.providerCode}`;
+  }
+  async init (){
+    return Promise.resolve(true);
+  }
   login() {
     console.log('bettingOdds->login');
     // return axios('http://wap.beer777.com/web_root/public/login.aspx', { withCredentials: true })
@@ -83,11 +89,26 @@ class bettingOdds extends connectionBase {
   }
 
   async crawl() {
+    const leaguePromise = Url.resolve(this.baseURL, '/leagues');
     const todayPromise = Url.resolve(this.baseURL, `/events/${moment.utc().format('YYYY-MM-DD')}`);
     const day1stPromise = Url.resolve(this.baseURL, `/events/${moment.utc().add(1, 'd').format('YYYY-MM-DD')}`);
     const day2ndPromise = Url.resolve(this.baseURL, `/events/${moment.utc().add(2, 'd').format('YYYY-MM-DD')}`);
     const day3rdPromise = Url.resolve(this.baseURL, `/events/${moment.utc().add(3, 'd').format('YYYY-MM-DD')}`);
-    const promiseResults = await Promise.map( [todayPromise, day1stPromise, day2ndPromise, day3rdPromise ], async (promise) => {
+
+
+
+    const leaguePromiseResult = await this.myCrawl(leaguePromise);
+
+    const leagueCache = {};
+    _.each(leaguePromiseResult, (value, key) => {
+      if (value.sport === 'Soccer') {
+        this.DBHandler.delaySetSOTLeague(this.providerCode, key, value.name);
+        leagueCache[key] = value.name;
+      }
+    });
+    await this.DBHandler.flushSOTLeague();
+
+    const promiseResults = await Promise.map([todayPromise, day1stPromise, day2ndPromise, day3rdPromise], async (promise) => {
       return this.myCrawl(promise);
     });
     const resultContentArr = [];
@@ -97,7 +118,6 @@ class bettingOdds extends connectionBase {
       });
     });
     const resultContentSortedArr = _.orderBy(resultContentArr, [ function(o) { return o.datetime.value }, function(o) {return o.isAPIKeyReady} ]);
-    console.log(resultContentSortedArr);
     /*
 
     [ { datetime: { value: '2017-11-23 00:00:00', timezone: 'UTC' },
@@ -113,15 +133,16 @@ class bettingOdds extends connectionBase {
     sport: { id: 10, name: 'Soccer' },
     id: '25789565952' },
     */
-    const leagueCache = {};
     _.each(resultContentSortedArr, (resultContent) => {
       if (!_.has(leagueCache, resultContent.league.id)) {
         this.DBHandler.delaySetSOTLeague(this.providerCode, resultContent.league.id, resultContent.league.name);
         leagueCache[resultContent.league.id] = resultContent.league.name;
       }
+      console.log('%s, %s, %s', this.providerCode, resultContent.home.name, resultContent.away.name);
       this.DBHandler.delaySetSOTEvent(this.providerCode, resultContent.league.id,
-        resultContent.id, resultContent.home.id, resultContent.away.id,
-      '0', moment(resultContent.datetime.value, 'YYYY-MM-DD HH:mm:ss Z').toDate());
+        resultContent.id, resultContent.home.id, resultContent.home.name,
+        resultContent.away.id, resultContent.away.name,
+      '0', moment(`${resultContent.datetime.value} +0000`, 'YYYY-MM-DD HH:mm:ss Z').utc().format());
     });
     const result = await Promise.all([this.DBHandler.flushSOTLeague(), this.DBHandler.flushSOTEvent()]);
     return Promise.resolve(result);
