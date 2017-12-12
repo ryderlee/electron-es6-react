@@ -29,8 +29,12 @@ class ConnectionController {
     this.SOTConnection = new BettingOdds();
     this.autoPairingHandler = new RedisAutoParingHandler();
     return true;
-
   }
+
+  static getNewDBHandler() {
+    return new DBHandler();
+  }
+
   setConfig(inConfig) {
     this.config = inConfig;
     return Promise.resolve(true);
@@ -43,7 +47,7 @@ class ConnectionController {
       this.SOTConnection.setDBHandler(this.DBHandler);
     }
     this.autoPairingHandler.setConfig();
-    this.autoPairingHandler.setDBHandler(this.DBHandler);
+    this.autoPairingHandler.setDBHandler(ConnectionController.getNewDBHandler());
 
 
     await this.autoPairingHandler.init();
@@ -58,7 +62,8 @@ class ConnectionController {
           conn.setConfig(connection.config);
           conn.setProviderKey(connection.connectionKey);
           // conn.setInfoHandler(this.infoHandler);
-          conn.setDBHandler(this.DBHandler);
+
+          conn.setDBHandler(ConnectionController.getNewDBHandler());
           this.connections[conn.getUniqueCode()] = conn;
           // this.connections.push(conn);
           console.log('register connection: %s', connection.connectionKey);

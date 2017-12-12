@@ -40,6 +40,7 @@
     "electron-remote": "^1.1.2",
     "bluebird": "^3.4.6",
     "url": "^0.11.0",
+    "uniqid": "^4.1.1",
     "cookie": "^0.3.1",
     "form-data": "^2.1.2",
     "fetch-cookie": "^0.2.0",

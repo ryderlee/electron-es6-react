@@ -40,6 +40,7 @@ dependencies:
   request-promise-native: 1.0.5
   source-map-support: 0.4.18
   string-similarity: 1.2.0
+  uniqid: 4.1.1
   url: 0.11.0
   x-ray: 2.3.2
 devDependencies:
@@ -3884,6 +3885,10 @@ packages:
     dev: true
     resolution:
       integrity: sha512-q4spe4KTfsAS1SUHLO0wz8Qiyf1+vMIAgpRYioFYDMNqKfHQbg+AVDH3i4fvpl71/P1L0dBl+fQi+P37UYf0ew==
+  /macaddress/0.2.8:
+    dev: false
+    resolution:
+      integrity: sha1-WQTcU3w57G2+/q6QIycTX6hRHxI=
   /make-dir/1.1.0:
     dependencies:
       pify: 3.0.0
@@ -5502,6 +5507,12 @@ packages:
   /ua-parser-js/0.7.17:
     resolution:
       integrity: sha512-uRdSdu1oA1rncCQL7sCj8vSyZkgtL7faaw9Tc9rZ3mGgraQ7+Pdx7w5mnOSF3gw9ZNG6oc+KXfkon3bKuROm0g==
+  /uniqid/4.1.1:
+    dependencies:
+      macaddress: 0.2.8
+    dev: false
+    resolution:
+      integrity: sha1-iSIN32t1GuUrX3JISGNShZa7hME=
   /unique-string/1.0.0:
     dependencies:
       crypto-random-string: 1.0.0
@@ -5800,5 +5811,6 @@ specifiers:
   request-promise-native: ^1.0.3
   source-map-support: ^0.4.8
   string-similarity: ^1.2.0
+  uniqid: ^4.1.1
   url: ^0.11.0
   x-ray: ^2.3.1

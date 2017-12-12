@@ -79,7 +79,7 @@ config.controller = {
   strategy: {
   },
   sourceOfTruthConnections: {
-      enabled: true,
+      enabled: false,
       connectionID: 'bettingOddsAPI',
       connectionKey: 'bettingOddsAPI1',
       config: {

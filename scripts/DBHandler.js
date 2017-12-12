@@ -6,6 +6,7 @@ const Promise = require('bluebird');
 const querystring = require('querystring');
 const moment = require('moment');
 const axios = require('axios');
+const crypto = require('crypto');
 
 Redis.Command.setReplyTransformer('hgetall', (result) => {
   if (Array.isArray(result)) {
@@ -56,6 +57,8 @@ class InfoHandler {
     this.oddsBuff = [];
     this.leagueGroupBuff = [];
     this.config = {};
+    this.eventGroupLinkBuff = [];
+    this.eventGroupBuff = [];
 
     this.leagueUpdateCallbacks = [];
     this.leagueGroupUpdateCallbacks = [];
@@ -337,7 +340,39 @@ class InfoHandler {
 
   }
 
-  async setObjects(objType, inputObjArr) {
+  async setLists(listType, inputArr) {
+    const listArr = (!_.isArray(inputArr) ? [inputArr] : inputArr);
+    const pipe = this.redis.pipeline();
+    _.each(listArr, (list) => {
+      pipe.keys(list.id);
+    });
+    const tmpResult = await pipe.exec();
+    const DBResultList = [];
+    _.each(tmpResult, (tmpList) => {
+      if (!_.isNil(tmpList[1]) && !_.isEmpty(tmpList[1])) {
+        DBResultList[tmpList[1]] = tmpList[1];
+      }
+    });
+    const pipe2 = this.redis.pipeline();
+    let isDiff = 0;
+    let isDuplicate = 0;
+    _.each(listArr, (list) => {
+      const key = list.id;
+      const isExist = !_.isNil(DBResultList[key]);
+      if (!isExist) {
+        // diff / new
+        isDiff += 1;
+        pipe2.del(key);
+        pipe2.rpush(key, ...list.list);
+        pipe2.publish(`listUpdate_${listType}`, `set ${key}`);
+      } else {
+        isDuplicate += 1;
+      }
+    });
+    console.log('setLists #:%d, %d', isDiff, isDuplicate);
+    return pipe2.exec();
+  }
+  async setObjects(objType, inputObjArr, updateTimestamp = true) {
     // console.log('->setObjects');
     const objArr = (!_.isArray(inputObjArr) ? [inputObjArr] : inputObjArr);
     let dbChain2 = this.redis.pipeline();
@@ -352,7 +387,7 @@ class InfoHandler {
         }
       });
       // console.log(_.keys(result));
-      const now = moment().format('YYYYMMDDHHmmss');
+      const now = moment().utc().format();
       const dbChain = this.redis.pipeline();
       // const dbChain = this.redis;
       let isDiff = 0;
@@ -376,6 +411,9 @@ class InfoHandler {
           dbChain.zadd('objset', now, inputObj.id);
           dbChain.publish(`objUpdate_${objType}`, `set ${objKey}`);
         } else {
+          if (updateTimestamp) dbChain.hmset(inputObj.id, { lastUpdate: now });
+          dbChain.zadd('objset', now, inputObj.id);
+          dbChain.publish(`objUpdate_${objType}`, `set ${objKey}`);
           isDuplicate += 1;
         }
       });
@@ -451,24 +489,6 @@ class InfoHandler {
       leagueName: String(leagueName),
     });
     return Promise.resolve(true); 
-  }
-  /*TODO:not working here*/
-  async searchGoogle(keywordArr) {
-    const promiseArr = {};
-
-    await Promise.map(keywordArr, (keyword) => {
-
-        promiseArr[keyword] = this.axios.get('/customsearch/v1', { params: { auth: 'AIzaSyD--ThlYnbnM1p9qCzfSEkRw8exq71XDcs', cx: '006149041960462827544:zpky3uc3qmq', q: keyword, num: 3 }});
-    });
-    _.each(keywordArr, (keyword)=>{
-      if(!_.has(this.googleSearchBuff, keyword)) {
-        this.googleSearchBuff[keyword] = {};
-      }
-    });
-    const results = await Promise.all(promiseArr);
-    _.each(results, (result)=> {
-
-    })
   }
 
   flushSOTLeague() {
@@ -640,8 +660,58 @@ class InfoHandler {
     return Promise.resolve(true);
   }
 
+  loadObj(key) {
+    const result = this.redis.hgetall(key);
+    if (!_.isNil(result[1]))
+      return result[1];
+    return null;
+  }
+  loadList(key) {
+    const result = this.redis.lrange(key, 0, -1);
+    return result[1];
+  }
+  loadEventGroup(eventObj) {
+    const key = `kvp:eg#p:${eventObj.providerCode}#l:${eventObj.leagueCode}#e:${eventObj.eventCode}`;
+    if (this.redis.exists(key)) {
+      const obj = this.loadObj(key);
+      return obj;
+    }
+  }
+
+  delaySetEventGroupLink(eventObj, groupKey) {
+    this.eventGroupLinkBuff.push({
+      id: `obj:egl#p:${eventObj.providerCode}#l:${querystring.escape(eventObj.leagueCode)}#e:${eventObj.eventCode}`,
+      groupKey,
+    });
+    return Promise.resolve(true);
+  }
+  async delaySetEventGroup(...eventObjArr) {
+    const idArr = _.sortBy(_.map(eventObjArr, 'id'));
+    const key = `list:eg#egid:${crypto.createHash('md5').update(idArr.join()).digest('hex')}`;
+    await Promise.map(eventObjArr, eventObj => this.delaySetEventGroupLink(eventObj, key));
+    this.eventGroupBuff.push({
+      id: key,
+      list: idArr,
+    });
+    return Promise.resolve(true);
+  }
+
+  async flushEventGroup() {
+    await this.setLists('eventGroup', this.eventGroupBuff);
+    this.eventGroupBuff = [];
+    await this.setObjects('eventGroupLink', this.eventGroupLinkBuff);
+    this.eventGroupLinkBuff = [];
+    return Promise.resolve(true);
+  }
+
+  async setEventGroup(...eventObjArr) {
+    await this.delaySetEventGroup(...eventObjArr);
+    await this.flushEventGroup();
+    return Promise.resolve(true);
+  }
+
   encodeGameType(period, team, gameType, gameTypeDetail) {
-    var gameTypeStr = '';
+    let gameTypeStr = '';
     gameTypeStr += this.gamePeriodMap[period] + this.gameTeamMap[team] + this.gameTypeMap[gameType][gameTypeDetail];
     if (gameTypeStr.length !== 6) {
       console.error('something wrong. gameTypeStr:%s period:%s team:%s gameType:%s gameTypeDetail:%s', gameTypeStr, period, team, gameType, gameTypeDetail);

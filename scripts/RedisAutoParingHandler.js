@@ -138,8 +138,8 @@ class RedisAutoPairingHandler {
     const inObjArr = (_.isArray(obj) ? obj : [obj]);
     const promiseArr = [];
     _.each(inObjArr, (inObj) => {
-      if(!_.has(inObj, 'pairingInfo')) inObj.pairingInfo = {};
-      if(_.has(inObj, 'objType')) {
+      if (!_.has(inObj, 'pairingInfo')) inObj.pairingInfo = {};
+      if (_.has(inObj, 'objType')) {
         switch (inObj.objType) {
           case 'l':
             promiseArr.push(this.matchLeague(inObj));
@@ -169,22 +169,24 @@ class RedisAutoPairingHandler {
 
 
     if (_.has(this.googledResult, keyword)) {
-      console.log('submitGoogleSearch: loadCache : %s', keyword);
+      console.log('proceedGoogleSearch: loadCache : %s', keyword);
       obj.pairingInfo.googledResult = this.googledResult[keyword];
       this.proceedPairing(keyword, obj);
 
-    }else if (!_.has(this.googlingArr, keyword)) {
+    } else if (!_.has(this.googlingArr, keyword)) {
       //new search
-      console.log('submitGoogleSearch: new cache: %s', keyword);
+      console.log('proceedGoogleSearch: new cache: %s', keyword);
       this.googlingArr.keyword = [];
       this.googlingArr.keyword.push(obj);
+      console.log(this.googlingArr.keyword);
       const requestResult = await this.axios.get('/customsearch/v1', { params: { key: 'AIzaSyD--ThlYnbnM1p9qCzfSEkRw8exq71XDcs', cx: '002761999912980462279:cvtlm1njr4u', q: keyword, num: 3 } });
       const result = _.map(requestResult.data.items, 'link');
       await this.createObjToStore('googledResult', keyword, { links: result });
-      console.log('proceedGoogleSearch');
+      console.log('proceedGoogleSearch: keyword=%s', keyword);
+      console.log(this.googlingArr);
       console.log(this.googlingArr[keyword]);
       await this.proceedPairing(keyword, this.googlingArr[keyword]);
-      delete this.googlingArr.keyword;
+      delete this.googlingArr[keyword];
     } else {
       console.log('submitGoogleSearch: searching: %s', keyword);
       this.googlingArr.keyword.push(obj);
@@ -264,8 +266,13 @@ class RedisAutoPairingHandler {
     if(somethingToMatch) {
       console.log(eventObj);
       if (matchedEventArr.length > 0) {
-        console.log('matching count:%s', matchedEventArr.length);
-        console.log(matchedEventArr.slice(0, 3));
+        if (matchedEventArr.length === 1) {
+          await this.DBHandler.setEventGroup(eventObj, matchedEventArr[0]);
+          console.log('match added');
+        } else {
+          console.log('matching count:%s', matchedEventArr.length);
+          console.log(matchedEventArr.slice(0, 3));
+        }
       } else {
         console.log('NOT FOUND');
       }

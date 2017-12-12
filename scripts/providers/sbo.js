@@ -110,15 +110,15 @@ class sbo extends connectionBase {
       });
   }
 
-
-  extractEventInfo(marketId, eventStr){
+  // eslint-disable-next-line class-methods-use-this
+  extractEventInfo(marketId, eventStr) {
     let returnResult = {};
     if (eventStr.substring(0, 1) === '[') {
       returnResult.hasExtraInfo = true;
       const idx = eventStr.indexOf(']') + 1;
       const extraInfo = eventStr.substring(0, idx);
       let datetime = null;
-      let timeInfo = extraInfo.replace('[','').replace(']','');
+      let timeInfo = extraInfo.replace('[', '').replace(']', '');
       if(timeInfo.indexOf('!Live') > -1) {
         //today game
         const today = moment.tz('Asia/Hong_Kong').format('YYYY-MM-DD');
@@ -133,8 +133,8 @@ class sbo extends connectionBase {
         if(timeInfo.indexOf('**:**') > -1) {
           //future game
           timeInfo = timeInfo.replace(' **:**', '');
-          // datetime = moment.tz.zone('Asia/Hong_Kong').parse(timeInfo, 'MM/DD').toDate();
-          datetime = moment.tz(`${timeInfo}/${moment.tz('Asia/Hong_Kong').format('YYYY')} 00:00:00`, 'MM/DD/YYYY HH:mm:ss', 'Asia/Hong_Kong').utc().toDate();
+          if((timeInfo.split('/').length > 2))  datetime = moment.tz(`${timeInfo} 00:00:00`, 'MM/DD/YYYY HH:mm:ss', 'Asia/Hong_Kong').utc().toDate();
+          else datetime = moment.tz(`${timeInfo}/${moment.tz('Asia/Hong_Kong').format('YYYY')} 00:00:00`, 'MM/DD/YYYY HH:mm:ss', 'Asia/Hong_Kong').utc().toDate();
           // console.log('%s %s', timeInfo, moment(datetime).tz('Asia/Hong_Kong').format('YYYYMMDDHHmmss'));
         } else {
           const tmpArr = timeInfo.split(' ');
