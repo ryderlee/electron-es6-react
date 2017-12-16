@@ -60,6 +60,8 @@ class InfoHandler {
     this.eventGroupLinkBuff = [];
     this.eventGroupBuff = [];
 
+    this.subscriptionConnections = {};
+
     this.leagueUpdateCallbacks = [];
     this.leagueGroupUpdateCallbacks = [];
     this.eventUpdateCallbacks = [];
@@ -300,8 +302,11 @@ class InfoHandler {
     return true;
   }
 
-  getNewConnection() {
+  static getNewConnection() {
     return new Redis();
+  }
+  getNewConnection() {
+    return new Redis(); 
   }
   /*
   proceedCallbacks = (value, callbacks = []) => {
@@ -340,7 +345,7 @@ class InfoHandler {
 
   }
 
-  async setLists(listType, inputArr) {
+  async setSets(listType, inputArr) {
     const listArr = (!_.isArray(inputArr) ? [inputArr] : inputArr);
     const pipe = this.redis.pipeline();
     _.each(listArr, (list) => {
@@ -363,16 +368,16 @@ class InfoHandler {
         // diff / new
         isDiff += 1;
         pipe2.del(key);
-        pipe2.rpush(key, ...list.list);
-        pipe2.publish(`listUpdate_${listType}`, `set ${key}`);
+        pipe2.sadd(key, ...list.list);
+        pipe2.publish(`setUpdate_${listType}`, `set ${key}`);
       } else {
         isDuplicate += 1;
       }
     });
-    console.log('setLists #:%d, %d', isDiff, isDuplicate);
+    console.log('setSets #:%d, %d', isDiff, isDuplicate);
     return pipe2.exec();
   }
-  async setObjects(objType, inputObjArr, updateTimestamp = true) {
+  async setObjects(objType, inputObjArr) {
     // console.log('->setObjects');
     const objArr = (!_.isArray(inputObjArr) ? [inputObjArr] : inputObjArr);
     let dbChain2 = this.redis.pipeline();
@@ -383,7 +388,7 @@ class InfoHandler {
       let DBResult = {};
       _.each(DBTmpResult, (tmpObj) => {
         if (!_.isNull(tmpObj[1]) && !_.isUndefined(tmpObj[1]) && !_.isEmpty(tmpObj[1])) {
-          DBResult[tmpObj[1].id] = _.omit(tmpObj[1], ['rawJson', 'searchId', 'lastUpdate']);
+          DBResult[tmpObj[1].id] = _.omit(tmpObj[1], ['rawJson', 'searchId', 'lastUpdateDatetime', 'createDatetime']);
         }
       });
       // console.log(_.keys(result));
@@ -393,14 +398,16 @@ class InfoHandler {
       let isDiff = 0;
       let isDuplicate = 0;
       _.each(objArr, (inputObj) => {
-        const objToWrite = _.omit(inputObj, ['rawJson', 'searchId', 'lastUpdate']);
+        const objToWrite = _.omit(inputObj, ['rawJson', 'searchId', 'lastUpdateDatetime', 'createDatetime']);
         const objToCompare = {};
         _.each(_.keys(objToWrite), (key) => {
           objToCompare[key] = String(inputObj[key]);
         });
         const objKey = inputObj.id;
         // console.log(_.keys(DBResult));
-        if ((!_.has(DBResult, objKey)) || (!_.isEqual(DBResult[objKey], objToCompare))) {
+        const isExist = _.has(DBResult, objKey);
+        const isEqual = isExist && _.isEqual(DBResult[objKey], objToCompare);
+        if (!isExist || !isEqual) {
           // console.log('diff here, %s, %s', _.has(DBResult, objKey), _.isEqual(DBResult[objKey], objToCompare));
           objToWrite.lastUpdate = now;
           isDiff += 1;
@@ -408,12 +415,15 @@ class InfoHandler {
           if (_.has(inputObj, 'searchId')) {
             dbChain.set(inputObj.searchId, objToWrite.id);
           }
-          dbChain.zadd('objset', now, inputObj.id);
+          // dbChain.zadd('objset', now, inputObj.id);
+          dbChain.hmset(objKey, {lastPingDatetime: now});
+          if (isExist) dbChain.hmset(objKey, { createDatetime: now, lastUpdateDatetime: now });
+          else dbChain.hmset(objKey, { lastUpdateDatetime: now });
           dbChain.publish(`objUpdate_${objType}`, `set ${objKey}`);
         } else {
-          if (updateTimestamp) dbChain.hmset(inputObj.id, { lastUpdate: now });
-          dbChain.zadd('objset', now, inputObj.id);
-          dbChain.publish(`objUpdate_${objType}`, `set ${objKey}`);
+          dbChain.hmset(objKey, { lastPingDatetime: now });
+          // dbChain.zadd('objset', now, inputObj.id);
+          // dbChain.publish(`objUpdate_${objType}`, `set ${objKey}`);
           isDuplicate += 1;
         }
       });
@@ -687,7 +697,7 @@ class InfoHandler {
   }
   async delaySetEventGroup(...eventObjArr) {
     const idArr = _.sortBy(_.map(eventObjArr, 'id'));
-    const key = `list:eg#egid:${crypto.createHash('md5').update(idArr.join()).digest('hex')}`;
+    const key = `list:eg#egid:${_.uniqueId}`;
     await Promise.map(eventObjArr, eventObj => this.delaySetEventGroupLink(eventObj, key));
     this.eventGroupBuff.push({
       id: key,
@@ -697,7 +707,7 @@ class InfoHandler {
   }
 
   async flushEventGroup() {
-    await this.setLists('eventGroup', this.eventGroupBuff);
+    await this.setSets('eventGroup', this.eventGroupBuff);
     this.eventGroupBuff = [];
     await this.setObjects('eventGroupLink', this.eventGroupLinkBuff);
     this.eventGroupLinkBuff = [];
@@ -709,6 +719,36 @@ class InfoHandler {
     await this.flushEventGroup();
     return Promise.resolve(true);
   }
+
+  async subscribe(channel, messageCallback, errorCallback = null) {
+    if(_.isNull(errorCallback))
+      errorCallback = () => {};
+    const redis = this.getNewConnection();
+    console.log('subscribe-> channel: %s', channel);
+
+    await redis.subscribe(channel, errorCallback);
+    redis.on('message', messageCallback);
+    console.log('channel subscribed');
+    this.subscriptionConnections[channel] = redis;
+    return true;
+  }
+
+  async publish(channel, ...messageArr) {
+    const pipe = this.redis.pipeline();
+    _.each(messageArr, (message) => {
+      pipe.publish(channel, message);
+    });
+    return pipe.exec();
+  }
+  // eslint-disable-next-line class-methods-use-this
+  consumeMessage(message) {
+    const returnValue = {};
+    const i = message.indexOf(' ');
+    returnValue.command = message.slice(0, i);
+    returnValue.content = message.slice(i + 1); 
+    return returnValue;
+  }
+
 
   encodeGameType(period, team, gameType, gameTypeDetail) {
     let gameTypeStr = '';

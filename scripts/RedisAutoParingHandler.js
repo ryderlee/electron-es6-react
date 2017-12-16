@@ -1,5 +1,7 @@
 'use strict'
 
+const messagingBase = require('./messagingBase');
+
 const _ = require('lodash');
 const similarity = require('string-similarity');
 const jaro= require('jaro-winkler');
@@ -47,7 +49,6 @@ class RedisAutoPairingHandler {
   }
 
   async loadContentFromStore() {
-    console.log('loadContentFromStore');
     await this.firestore.collection('googledResult').get().then((qs) => {
       _.each(qs.docs, (doc) => {
         this.googledResult[querystring.unescape(doc.id)] = doc.data().links;
@@ -89,15 +90,9 @@ class RedisAutoPairingHandler {
     // console.log(result);
   }
 
-  messageMessage(message) {
-    const returnValue = {};
-    const i = message.indexOf(' ');
-    returnValue.command = message.slice(0, i);
-    returnValue.content = message.slice(i+1); 
-    return returnValue;
-  }
+  
   async onUpdateSOTLeagueMessageReceived(message) {
-    const messageDigested = this.messageMessage(message);
+    const messageDigested = this.DBHandler.consumeMessage(message);
     if (messageDigested.command === 'set') {
       if (!_.has(this.SOTLeague, messageDigested.content)) {
         const tmp = await this.conn.hgetall(messageDigested.content);
@@ -107,7 +102,7 @@ class RedisAutoPairingHandler {
   }
 
   async onUpdateSOTEventMessageReceived(message) {
-    const messageDigested = this.messageMessage(message);
+    const messageDigested = this.DBHandler.consumeMessage(message);
     if (messageDigested.command === 'set') {
       if (!_.has(this.SOTEvent, messageDigested.content)) {
         const tmp = await this.conn.hgetall(messageDigested.content);
@@ -117,7 +112,7 @@ class RedisAutoPairingHandler {
   }
 
   async onUpdateEventMessageReceived(message) {
-    const md = this.messageMessage(message);
+    const md = this.DBHandler.consumeMessage(message);
     if (md.command === 'set') {
       const eventObj = await this.conn.hgetall(md.content);
       if (!_.has(this.eventListForPairing, eventObj.providerCode)) this.eventListForPairing[eventObj.providerCode] = {};
@@ -127,7 +122,7 @@ class RedisAutoPairingHandler {
   }
 
   async onUpdateLeagueMessageReceived(message) {
-    const md = this.messageMessage(message);
+    const md = this.DBHandler.consumeMessage(message);
     if (md.command === 'set') {
       const leagueObj = await this.conn.hgetall(md.content);
       await this.proceedPairingInfo(leagueObj);

@@ -3,7 +3,6 @@ const _ = require('lodash');
 const DBHandler = require('./DBHandler');
 const config = require('./config');
 const Promise = require('bluebird');
-const RedisAutoParingHandler = require('./RedisAutoParingHandler');
 // const MatchingHandler = require('./MatchingHandler')
 
 const connectionStore = {};
@@ -13,7 +12,7 @@ connectionStore.pinbet= require('./providers/pinbet');
 connectionStore.sbo = require('./providers/sbo');
 
 const BettingOdds = require('./providers/bettingOdds');
-
+const messagingBase = require('./messagingBase');
 // connectionStore['maxbet'] = require('./providers/maxbet')
 
 process.on('unhandledRejection', (reason, p) => {
@@ -21,19 +20,22 @@ process.on('unhandledRejection', (reason, p) => {
   // application specific logging, throwing an error, or other logic here
 });
 
-class ConnectionController {
+class ConnectionController extends messagingBase{
   constructor() {
+    super();
     this.connections = {};
     this.infoHandler = null;
+    this.messagingName = 'ConnectionController';
     this.DBHandler = new DBHandler();
     this.SOTConnection = new BettingOdds();
-    this.autoPairingHandler = new RedisAutoParingHandler();
-    return true;
+    // this.autoPairingHandler = new RedisAutoParingHandler();
   }
 
+  /*
   static getNewDBHandler() {
     return new DBHandler();
   }
+  */
 
   setConfig(inConfig) {
     this.config = inConfig;
@@ -46,12 +48,13 @@ class ConnectionController {
       this.SOTConnection.setConfig(this.config.sourceOfTruthConnections);
       this.SOTConnection.setDBHandler(this.DBHandler);
     }
+    /*
     this.autoPairingHandler.setConfig();
     this.autoPairingHandler.setDBHandler(ConnectionController.getNewDBHandler());
 
-
     await this.autoPairingHandler.init();
 
+    */
     if (this.config.sourceOfTruthConnections.enabled) await this.SOTConnection.init();
 
     return Promise.map(this.config.connections, (connection) => {
@@ -63,7 +66,7 @@ class ConnectionController {
           conn.setProviderKey(connection.connectionKey);
           // conn.setInfoHandler(this.infoHandler);
 
-          conn.setDBHandler(ConnectionController.getNewDBHandler());
+          conn.setDBHandler(new DBHandler());
           this.connections[conn.getUniqueCode()] = conn;
           // this.connections.push(conn);
           console.log('register connection: %s', connection.connectionKey);
@@ -77,7 +80,7 @@ class ConnectionController {
     });
   }
   async start() {
-    console.log('start');
+    console.log('ConnectionController->start');
 
     /*
     let isn = new connectionStore['isn']();
@@ -90,8 +93,12 @@ class ConnectionController {
     */
     // console.log(this.connections);
     if (this.config.sourceOfTruthConnections.enabled) await this.SOTConnection.start();
-    await this.autoPairingHandler.loadSOTContent();
-    await Promise.all([this.autoPairingHandler.start(), this.autoPairingHandler.processOnce()]);
+    // await this.autoPairingHandler.loadSOTContent();
+    /*
+    await this.autoPairingHandler.monitorForStart('general', 'autoPairingHandler');
+    */
+
+    // await Promise.all([this.DBHandler.publish('general', 'start autoPairingHandler'), this.autoPairingHandler.processOnce()]);
     
     return Promise.map(_.values(this.connections), async conn => conn.start())
       .then(console.log('end start'));
@@ -101,13 +108,14 @@ class ConnectionController {
     return _.every(_.values(this.connections), connection => connection.isReady());
   }
 
-  async kickstart() {
-    this.setConfig(config.controller);
-    await this.init();
-    await this.start();
+  static async kickstart() {
+    const cc = new ConnectionController();
+    cc.setConfig(config.controller);
+    cc.listenerName = 'ConnectionController';
+    cc.isListenerMode = true;
+    await cc.listen();
   }
 }
 
 module.exports = ConnectionController;
-const cc = new ConnectionController();
-cc.kickstart();
+ConnectionController.kickstart();
