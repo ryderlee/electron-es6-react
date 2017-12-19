@@ -285,6 +285,7 @@ class sbo extends connectionBase {
                 const urlResult = Url.parse(Url.resolve(this.baseURL, `ticket.aspx?${gameRegexResultIndividual[1]}`), true);
                 // console.log(urlResult);
                 const isHomeOrAway = (urlResult.query.option === 'h' ? 0 : 1);
+                console.log('sbo: odds submit: %s %s %s', `${leagueId}_${matchId}_${gameCode}_${isHomeOrAway}`, isHomeOrAway, urlResult.query.odds);
                 this.DBHandler.delaySetOdds(this.providerCode, leagueId, matchId, gameCode, gameType,
                   // `${leagueId}_${matchId}_${gameCode}_u${urlResult.query.id}_${isHomeOrAway}`, isHomeOrAway, urlResult.query.odds, -1);
                   `${leagueId}_${matchId}_${gameCode}_${isHomeOrAway}`, isHomeOrAway, urlResult.query.odds, -1);

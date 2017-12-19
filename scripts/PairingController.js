@@ -1,27 +1,12 @@
-const _ = require('lodash');
 // const InfoHandler = require('./InfoHandler');
 const DBHandler = require('./DBHandler');
 const config = require('./config');
 const Promise = require('bluebird');
 const RedisAutoParingHandler = require('./RedisAutoParingHandler');
 // const MatchingHandler = require('./MatchingHandler')
-
-
 const messagingBase = require('./messagingBase');
-const connectionStore = {};
-connectionStore.isn = require('./providers/isn');
-// const Isn = require('./providers/isn');
-connectionStore.pinbet= require('./providers/pinbet');
-connectionStore.sbo = require('./providers/sbo');
-
-const BettingOdds = require('./providers/bettingOdds');
 
 // connectionStore['maxbet'] = require('./providers/maxbet')
-
-process.on('unhandledRejection', (reason, p) => {
-  console.log('Unhandled Rejection at:', p, 'reason:', reason);
-  // application specific logging, throwing an error, or other logic here
-});
 
 class PairingController extends messagingBase {
   constructor() {
@@ -30,9 +15,6 @@ class PairingController extends messagingBase {
     this.messagingName = 'PairingController';
     this.DBHandler = new DBHandler();
   }
-
- 
-
 
   setConfig(inConfig) {
     this.config = inConfig;
@@ -51,15 +33,6 @@ class PairingController extends messagingBase {
   async start() {
     console.log('ConnectionController->start');
 
-    /*
-    let isn = new connectionStore['isn']();
-    this.connections['isn'] = isn;
-    console.log(_.size(this.connections));
-    _.each(this.connections, (value, key) => {
-      console.log("key:%s" , key);
-      this.connections[key].start();
-    });
-    */
     // console.log(this.connections);
     return this.autoPairingHandler.start();
   }

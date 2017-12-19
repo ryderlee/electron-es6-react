@@ -116,7 +116,7 @@ class RedisAutoPairingHandler {
     if (md.command === 'set') {
       const eventObj = await this.conn.hgetall(md.content);
       if (!_.has(this.eventListForPairing, eventObj.providerCode)) this.eventListForPairing[eventObj.providerCode] = {};
-      this.eventListForPairing[eventObj.providerCode][md.content] = eventObj;
+      this.eventListForPairing[eventObj.providerCode][eventObj.id] = eventObj;
       await this.proceedPairingInfo(eventObj);
     }
   }
@@ -258,11 +258,14 @@ class RedisAutoPairingHandler {
         matchedEventArr = _.concat(matchedEventArr, result);
       }
     });
-    if(somethingToMatch) {
+    if (somethingToMatch) {
       console.log(eventObj);
       if (matchedEventArr.length > 0) {
         if (matchedEventArr.length === 1) {
-          await this.DBHandler.setEventGroup(eventObj, matchedEventArr[0]);
+          const eventMatched =matchedEventArr[0];
+          await this.DBHandler.setEventGroup(eventObj, eventMatched);
+          delete this.eventListForPairing[eventObj.providerCode][eventObj.id];
+          delete this.eventListForPairing[eventMatched.providerCode][eventMatched.id];
           console.log('match added');
         } else {
           console.log('matching count:%s', matchedEventArr.length);
@@ -409,6 +412,7 @@ class RedisAutoPairingHandler {
 
   async monitor() {
     console.log('autoPairing->monitor');
+    //TODO: change to use DBHandler methods instead of own method
     await this.monitorConn.subscribe('objUpdate_league', 'objUpdate_event', 'objUpdate_SOTLeague', 'objUpdate_SOTEvent');
     
     this.monitorConn.on('message', async (channel, message) => {

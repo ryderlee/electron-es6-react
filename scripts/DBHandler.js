@@ -6,7 +6,7 @@ const Promise = require('bluebird');
 const querystring = require('querystring');
 const moment = require('moment');
 const axios = require('axios');
-const crypto = require('crypto');
+const uniqid = require('uniqid');
 
 Redis.Command.setReplyTransformer('hgetall', (result) => {
   if (Array.isArray(result)) {
@@ -388,7 +388,7 @@ class InfoHandler {
       let DBResult = {};
       _.each(DBTmpResult, (tmpObj) => {
         if (!_.isNull(tmpObj[1]) && !_.isUndefined(tmpObj[1]) && !_.isEmpty(tmpObj[1])) {
-          DBResult[tmpObj[1].id] = _.omit(tmpObj[1], ['rawJson', 'searchId', 'lastUpdateDatetime', 'createDatetime']);
+          DBResult[tmpObj[1].id] = _.omit(tmpObj[1], ['rawJson', 'searchId', 'lastPingDatetime', 'lastUpdateDatetime', 'createDatetime']);
         }
       });
       // console.log(_.keys(result));
@@ -398,7 +398,7 @@ class InfoHandler {
       let isDiff = 0;
       let isDuplicate = 0;
       _.each(objArr, (inputObj) => {
-        const objToWrite = _.omit(inputObj, ['rawJson', 'searchId', 'lastUpdateDatetime', 'createDatetime']);
+        const objToWrite = _.omit(inputObj, ['rawJson', 'searchId', 'lastUpdateDatetime', 'lastPingDatetime', 'createDatetime']);
         const objToCompare = {};
         _.each(_.keys(objToWrite), (key) => {
           objToCompare[key] = String(inputObj[key]);
@@ -409,7 +409,6 @@ class InfoHandler {
         const isEqual = isExist && _.isEqual(DBResult[objKey], objToCompare);
         if (!isExist || !isEqual) {
           // console.log('diff here, %s, %s', _.has(DBResult, objKey), _.isEqual(DBResult[objKey], objToCompare));
-          objToWrite.lastUpdate = now;
           isDiff += 1;
           dbChain.hmset(objKey, objToWrite);
           if (_.has(inputObj, 'searchId')) {
@@ -677,7 +676,7 @@ class InfoHandler {
     return null;
   }
   loadList(key) {
-    const result = this.redis.lrange(key, 0, -1);
+    const result = this.redis.smember(key);
     return result[1];
   }
   loadEventGroup(eventObj) {
@@ -697,7 +696,7 @@ class InfoHandler {
   }
   async delaySetEventGroup(...eventObjArr) {
     const idArr = _.sortBy(_.map(eventObjArr, 'id'));
-    const key = `list:eg#egid:${_.uniqueId}`;
+    const key = `list:eg#egid:${uniqid()}`;
     await Promise.map(eventObjArr, eventObj => this.delaySetEventGroupLink(eventObj, key));
     this.eventGroupBuff.push({
       id: key,
@@ -748,7 +747,66 @@ class InfoHandler {
     returnValue.content = message.slice(i + 1); 
     return returnValue;
   }
+  async keyCount(key) {
+    const result = await this.redis.keys(key);
+    return result.length;
+  }
+  async getObjectsByKeys(keys, isPattern = false) {
+    const returnValue = [];
+    const keysArr = _.isArray(keys) ? keys : [keys];
+    let keysResult = null;
+    if (isPattern) {
+      const pipe = this.redis.pipeline();
+      _.each(keysArr, (keyPattern) => {
+        pipe.keys(keyPattern);
+      });
+      keysResult = await pipe.exec();
+    } else {
+      keysResult = keys;
+    }
+    const pipe2 = this.redis.pipeline();
+    _.each(keysResult, (key) => {
+      if (isPattern) {
+        if (!_.isNil(key[1]) && !_.isEmpty(key[1]) && _.isArray(key[1])) _.each(key[1], k => pipe2.hgetall(k));
+        else console.log('something wrong');
+      } else {
+        pipe2.hgetall(key);
+      }
+    });
+    const objArrResult = await pipe2.exec();
+    _.each(objArrResult, (objResult) => {
+      if (!_.isNil(objResult[1]) && !_.isEmpty(objResult[1])) {
+        returnValue.push(objResult[1]);
+      }
+    });
+    return returnValue;
+  }
+  async getEventsOddsForSureBet(eventGroupId) {
+    const pipe = this.redis.pipeline();
 
+    if (await this.keyCount(eventGroupId) > 0) {
+      const eventList = await this.redis.smembers(eventGroupId);
+      _.each(eventList, (eventId) => {
+        pipe.hgetall(eventId);
+      });
+      const eventObjArrFromRedis = await pipe.exec();
+      const oddsPatternsArr = [];
+      _.each(eventObjArrFromRedis, (eventObj) => {
+        if (!_.isNil(eventObj[1]) && !_.isEmpty(eventObj[1])) {
+          oddsPatternsArr.push(`${eventObj[1].id.replace('obj:e#', 'obj:o#')}*`);
+        }
+      });
+      const oddsObjArr = await this.getObjectsByKeys(oddsPatternsArr, true);
+      const returnValue = {};
+      _.each(oddsObjArr, (oddsObj) => {
+        if (!_.has(returnValue, oddsObj.gameTypeStr)) returnValue[oddsObj.gameTypeStr] = {};
+        if (!_.has(returnValue[oddsObj.gameTypeStr], oddsObj.providerCode)) returnValue[oddsObj.gameTypeStr][oddsObj.providerCode] = [];
+        returnValue[oddsObj.gameTypeStr][oddsObj.providerCode].push(oddsObj);
+      });
+      return Promise.resolve(returnValue);
+    }
+    return Promise.resolve(null);
+  }
 
   encodeGameType(period, team, gameType, gameTypeDetail) {
     let gameTypeStr = '';
