@@ -83,9 +83,12 @@ class RedissureBetHandler {
               const rightHandOddsObjFilterResult = _.filter(rightHandOddsObjArr, { homeOrAway: rightHandOddsHomeOrAway });
               if (rightHandOddsObjFilterResult.length > 0) {
                 const rightHandOddsObj = rightHandOddsObjFilterResult[0];
-                if ( parseFloat(leftHandOddsObj.odds) + parseFloat(rightHandOddsObj.odds) > 4) {
+                const leftHandOdds = (parseFloat(leftHandOddsObj.odds) > 2.0) ? (-1 / (parseFloat(leftHandOddsObj.odds) - 1)) : parseFloat(leftHandOddsObj.odds) - 1;
+                const rightHandOdds = (parseFloat(rightHandOddsObj.odds) > 2.0) ? (-1 / (parseFloat(rightHandOddsObj.odds) - 1)) : parseFloat(rightHandOddsObj.odds) - 1;
+                console.log('%s => %s, %s => %s', leftHandOddsObj.odds, leftHandOdds, rightHandOddsObj.odds, rightHandOdds);
+                if ( parseFloat(leftHandOdds) + parseFloat(rightHandOdds) > 0) {
 
-                  console.log('odds found: %s %s, %s %s, %s', leftHandOddsObj.id, leftHandOddsObj.odds, rightHandOddsObj.id, rightHandOddsObj.odds, parseFloat(leftHandOddsObj.odds) + parseFloat(rightHandOddsObj.odds));
+                  console.log('odds found: %s %s, %s %s, %s', leftHandOddsObj.id, leftHandOdds, rightHandOddsObj.id, rightHandOdds, parseFloat(leftHandOdds) + parseFloat(rightHandOdds));
                 }
               }
 

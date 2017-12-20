@@ -2,64 +2,117 @@
 var config = {}
 
 config.controller = {
-  connections: [{
-    // 0
-    connectionID: 'isn',
-    enabled: true,
-    connectionKey: 'isn1',
-    config: {
-      username: 'c00001',
-      password: '1234aaaa',
-      eventScheduleId: 1,
-      sportId: 1,
-      momentFormatStr: 'LTS',
-      errorReconnectDuration: 5000,
-      eventUpdateDuration: 20000,
-      eventPriceUpdateDuration: 10000,
-      apiKeyDuration: 12000,
+  connections: [
+    {
+      // 0
+      connectionID: 'isn',
+      enabled: true,
+      connectionKey: 'isn1',
+      forBetting: false,
+      proxy: {
+        enableProxy: false,
+        proxySetting: {
+          host: '127.0.0.1',
+          port: 9000,
+          auth: {
+            username: 'mikeymike',
+            password: 'rapunz3l',
+          },
+        },
+      },
+      market: {
+        live: true,
+        today: true,
+        early: true,
+      },
+      config: {
+        username: 'c00001',
+        password: '1234aaaa',
+        eventScheduleId: 1,
+        sportId: 1,
+        momentFormatStr: 'LTS',
+        errorReconnectDuration: 5000,
+        eventUpdateDuration: 20000,
+        eventPriceUpdateDuration: 10000,
+        apiKeyDuration: 12000,
+      },
     },
-  },
-  {
-    connectionID: 'pinbet',
-    enabled: false,
-    connectionKey: 'pinbet1',
-    config: {
-      username: 'Ch8ccctest',
-      password: '1234aaaa',
-      momentFormatStr: 'LTS',
-      errorReconnectDuration: 5000,
-      leagueUpdateDuration: 30000,
-      eventUpdateDuration: 10000,
-      eventPriceUpdateDuration: 10000,
-      eventUpdateRetryDuration : 5000,
-      leagueUpdateRetryDuration : 5000,
-      eventPriceUpdateRetryDuration : 5000
+    {
+      connectionID: 'pinbet',
+      enabled: false,
+      connectionKey: 'pinbet1',
+      forBetting: false,
+      proxy: {
+        enableProxy: false,
+        proxySetting: {
+          host: '127.0.0.1',
+          port: 9000,
+          auth: {
+            username: 'mikeymike',
+            password: 'rapunz3l',
+          },
+        },
+      },
+      market: {
+        live: true,
+        today: true,
+        early: true,
+      },
+      config: {
+        username: 'Ch8ccctest',
+        password: '1234aaaa',
+        momentFormatStr: 'LTS',
+        errorReconnectDuration: 5000,
+        leagueUpdateDuration: 30000,
+        eventUpdateDuration: 10000,
+        eventPriceUpdateDuration: 10000,
+        eventUpdateRetryDuration : 5000,
+        leagueUpdateRetryDuration : 5000,
+        eventPriceUpdateRetryDuration : 5000
+      }
+    },
+    {
+      connectionID: 'sbo',
+      enabled: true,
+      connectionKey: 'sbo1',
+      forBetting: false,
+      proxy: {
+        enableProxy: false,
+        proxySetting: {
+          host: '127.0.0.1',
+          port: 9000,
+          auth: {
+            username: 'mikeymike',
+            password: 'rapunz3l',
+          },
+        },
+      },
+      market: {
+        live: true,
+        today: true,
+        early: true,
+      },
+      config: {
+        username: 'Vdfb330',
+        password: '1234aaaa',
+        momentFormatStr: 'LTS',
+        errorReconnectDuration: 5000,
+        updateDuration: 10000
+      }
+    },
+    {
+      connectionID: 'maxbet',
+      enabled: false,
+      connectionKey: 'maxbet1',
+      config: {
+        username: 'sfbopfb660',
+        password: 'AAaa1234',
+        momentFormatStr: 'LTS',
+        errorReconnectDuration: 5000,
+        updateDuration: 10000
+      }
     }
-  },
-  {
-    connectionID: 'sbo',
-    enabled: true,
-    connectionKey: 'sbo1',
-    config: {
-      username: 'Vdfb330',
-      password: '1234aaaa',
-      momentFormatStr: 'LTS',
-      errorReconnectDuration: 5000,
-      updateDuration: 10000
-    }
-  },
-  {
-    connectionID: 'maxbet',
-    enabled: false,
-    connectionKey: 'maxbet1',
-    config: {
-      username: 'sfbopfb660',
-      password: 'AAaa1234',
-      momentFormatStr: 'LTS',
-      errorReconnectDuration: 5000,
-      updateDuration: 10000
-    }
-  }],
+  ],
   view: {
     connections: {
       sbo:
