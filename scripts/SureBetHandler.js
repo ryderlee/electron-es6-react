@@ -65,7 +65,42 @@ class RedissureBetHandler {
     return Promise.resolve(true);
 
   }
+  findOddsBetsByOddsArr(leftHandOddsObjArr, rightHandOddsObjArr) {
+    const cutOffDatetime = moment().subtract(60, 'seconds').utc();
+    _.each(leftHandOddsObjArr, (leftHandOddsObj) => {
+      const rightHandOddsHomeOrAway = (leftHandOddsObj.homeOrAway === '0' ? '1' : '0');
+      const rightHandOddsObjFilterResult = _.filter(rightHandOddsObjArr, { homeOrAway: rightHandOddsHomeOrAway });
+      if (rightHandOddsObjFilterResult.length > 0) {
+        const rightHandOddsObj = rightHandOddsObjFilterResult[0];
+        // this.findOddsBetsByOddsObj(leftHandOddsObj, rightHandOddsObj);
+        const leftHandOdds = (parseFloat(leftHandOddsObj.odds) > 2.0) ? (-1 / (parseFloat(leftHandOddsObj.odds) - 1)) : parseFloat(leftHandOddsObj.odds) - 1;
+        const rightHandOdds = (parseFloat(rightHandOddsObj.odds) > 2.0) ? (-1 / (parseFloat(rightHandOddsObj.odds) - 1)) : parseFloat(rightHandOddsObj.odds) - 1;
+        if ((leftHandOdds + rightHandOdds > 2) || ((leftHandOdds + rightHandOdds) > 0 && (leftHandOdds < 0 || rightHandOdds < 0))
+        ) {
+          console.log('old odds found@%s: %s %s %s %s, %s %s %s %s, %s', moment().utc().format(), leftHandOddsObj.id, leftHandOddsObj.odds, leftHandOdds, leftHandOddsObj.lastPingDatetime,
+            rightHandOddsObj.id, rightHandOddsObj.odds, rightHandOdds, rightHandOddsObj.lastPingDatetime,
+            parseFloat(leftHandOdds) + parseFloat(rightHandOdds));
 
+        }
+        if ((leftHandOdds + rightHandOdds > 2) || ((leftHandOdds + rightHandOdds) > 0 && (leftHandOdds < 0 || rightHandOdds < 0))
+          && cutOffDatetime.isBefore(moment(leftHandOddsObj.lastPingDatetime))
+          && cutOffDatetime.isBefore(moment(rightHandOddsObj.lastPingDatetime))
+        ) {
+          console.log('!!!odds found@%s: %s %s %s %s, %s %s %s %s, %s', moment().utc().format(), leftHandOddsObj.id, leftHandOddsObj.odds, leftHandOdds, leftHandOddsObj.lastPingDatetime,
+            rightHandOddsObj.id, rightHandOddsObj.odds, rightHandOdds, rightHandOddsObj.lastPingDatetime,
+            parseFloat(leftHandOdds) + parseFloat(rightHandOdds));
+
+        }
+        /*
+        if (((1 / parseFloat(leftHandOddsObj.odds)) + (1 / parseFloat(rightHandOddsObj.odds))) < 1) {
+          console.log('odds found: %s %s, %s %s, %s', leftHandOddsObj.id, leftHandOddsObj.odds,
+            rightHandOddsObj.id, rightHandOddsObj.odds,
+            ((1 / parseFloat(leftHandOddsObj.odds)) + (1 / parseFloat(rightHandOddsObj.odds))));
+        }
+        */
+      }
+    });
+  }
   async onUpdateEventGroupMessageReceived(message) {
     const md = this.DBHandler.consumeMessage(message);
     if (md.command === 'set') {
@@ -78,32 +113,44 @@ class RedissureBetHandler {
           for (let y = i + 1; y < _.size(eventArrByGame); y += 1) {
             const rightHandProviderCode = _.keys(eventArrByGame)[y];
             const rightHandOddsObjArr = eventArrByGame[rightHandProviderCode];
-            _.each(leftHandOddsObjArr, (leftHandOddsObj) => {
-              const rightHandOddsHomeOrAway = (leftHandOddsObj.homeOrAway === '0' ? '1' : '0');
-              const rightHandOddsObjFilterResult = _.filter(rightHandOddsObjArr, { homeOrAway: rightHandOddsHomeOrAway });
-              if (rightHandOddsObjFilterResult.length > 0) {
-                const rightHandOddsObj = rightHandOddsObjFilterResult[0];
-                const leftHandOdds = (parseFloat(leftHandOddsObj.odds) > 2.0) ? (-1 / (parseFloat(leftHandOddsObj.odds) - 1)) : parseFloat(leftHandOddsObj.odds) - 1;
-                const rightHandOdds = (parseFloat(rightHandOddsObj.odds) > 2.0) ? (-1 / (parseFloat(rightHandOddsObj.odds) - 1)) : parseFloat(rightHandOddsObj.odds) - 1;
-                console.log('%s => %s, %s => %s', leftHandOddsObj.odds, leftHandOdds, rightHandOddsObj.odds, rightHandOdds);
-                if ( parseFloat(leftHandOdds) + parseFloat(rightHandOdds) > 0) {
-
-                  console.log('odds found: %s %s, %s %s, %s', leftHandOddsObj.id, leftHandOdds, rightHandOddsObj.id, rightHandOdds, parseFloat(leftHandOdds) + parseFloat(rightHandOdds));
-                }
-              }
-
-            });
+            this.findOddsBetsByOddsArr(leftHandOddsObjArr, rightHandOddsObjArr);
           }
         }
       });
     }
   }
   async onUpdateOddsMessageReceived(message) {
+    const md = this.DBHandler.consumeMessage(message);
+    if (md.command === 'set') {
+      // console.log('sureBet->incoming:', md.content);
+      const eventGroupLinkId = this.DBHandler.eventIdToEventGroupLinkId(this.DBHandler.toEventId(md.content));
+      // console.log('sureBet->incoming1:', eventGroupLinkId);
+      const eventGroupLinkObj = await this.DBHandler.loadObj(eventGroupLinkId);
+      // console.log('sureBet->incoming2:', eventGroupLinkObj.groupKey);
+      if (!_.isNil(eventGroupLinkObj) && !_.isUndefined(eventGroupLinkObj)) {
+        const oddsArr = await this.DBHandler.getEventsOddsForSureBet(eventGroupLinkObj.groupKey);
+        const oddsObj = await this.DBHandler.loadObj(md.content);
+        _.each(oddsArr, (oddsPair, key) => {
+          if(key === oddsObj.gameTypeStr) {
+            const tempOddsPair = _.cloneDeep(oddsPair);
+            const leftHandOddsObjArr = tempOddsPair[this.DBHandler.extractProviderCode(md.content)];
+            delete tempOddsPair[this.DBHandler.extractProviderCode(md.content)];
+            for (let i = 0; i < _.size(tempOddsPair); i += 1) {
+              const rightHandProviderCode = _.keys(tempOddsPair)[i];
+              const rightHandOddsObjArr = tempOddsPair[rightHandProviderCode];
+              this.findOddsBetsByOddsArr(leftHandOddsObjArr, rightHandOddsObjArr);
+            }
+          }
+        });
+      } else {
+        console.log('not under monitor:', md.content);
+      }
+    }
     return Promise.resolve(true);
   }
   async monitor() {
     console.log('sureBet->monitor');
-    await this.monitorConn.subscribe('setUpdate_eventGroup');
+    await this.monitorConn.subscribe('setUpdate_eventGroup', 'objUpdate_odds');
     
     this.monitorConn.on('message', async (channel, message) => {
       switch (channel) {

@@ -12,7 +12,7 @@ class connectionBase {
   }
 
   init() {
-    if(this.config.proxy.enableProxy) {
+    if (this.config.proxy.enableProxy) {
       this.axios = axios.create({
         proxy: this.config.proxy.proxySetting,
       });
@@ -28,6 +28,9 @@ class connectionBase {
   }
   setConfig(config) {
     this.config = config;
+  }
+  getUniqueCode() {
+    return this.providerKey;
   }
 }
 // let exa = ReactDOM.render(<Example />, document.getElementById('content2'))

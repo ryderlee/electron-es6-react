@@ -67,6 +67,7 @@ class ConnectionController extends messagingBase{
           // conn.setInfoHandler(this.infoHandler);
 
           conn.setDBHandler(new DBHandler());
+          conn.init();
           this.connections[conn.getUniqueCode()] = conn;
           // this.connections.push(conn);
           console.log('register connection: %s', connection.connectionKey);

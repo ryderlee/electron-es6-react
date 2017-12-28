@@ -669,10 +669,10 @@ class InfoHandler {
     return Promise.resolve(true);
   }
 
-  loadObj(key) {
-    const result = this.redis.hgetall(key);
-    if (!_.isNil(result[1]))
-      return result[1];
+  async loadObj(key) {
+    const result = await this.redis.hgetall(key);
+    if (!_.isNil(result))
+      return result;
     return null;
   }
   loadList(key) {
@@ -687,6 +687,17 @@ class InfoHandler {
     }
   }
 
+  extractProviderCode(key) {
+    const keyArr = key.split('#');
+    return keyArr[1].replace('p:', '');
+  }
+  toEventId(key){
+    const keyArr = key.split('#');
+    return `obj:e#${keyArr.slice(1, 4).join('#')}`;
+  }
+  eventIdToEventGroupLinkId(inKey){
+    return inKey.replace('obj:e', 'obj:egl');
+  }
   delaySetEventGroupLink(eventObj, groupKey) {
     this.eventGroupLinkBuff.push({
       id: `obj:egl#p:${eventObj.providerCode}#l:${querystring.escape(eventObj.leagueCode)}#e:${eventObj.eventCode}`,
@@ -768,7 +779,7 @@ class InfoHandler {
     _.each(keysResult, (key) => {
       if (isPattern) {
         if (!_.isNil(key[1]) && !_.isEmpty(key[1]) && _.isArray(key[1])) _.each(key[1], k => pipe2.hgetall(k));
-        else console.log('something wrong');
+        // else console.log('something wrong, key:', key[1], keys, isPattern);
       } else {
         pipe2.hgetall(key);
       }

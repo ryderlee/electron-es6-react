@@ -1,5 +1,4 @@
-
-var config = {}
+const config = {};
 
 config.controller = {
   connections: [
@@ -9,32 +8,31 @@ config.controller = {
       enabled: true,
       connectionKey: 'isn1',
       forBetting: false,
-      proxy: {
-        enableProxy: false,
-        proxySetting: {
-          host: '127.0.0.1',
-          port: 9000,
-          auth: {
-            username: 'mikeymike',
-            password: 'rapunz3l',
-          },
-        },
-      },
-      market: {
-        live: true,
-        today: true,
-        early: true,
-      },
       config: {
         username: 'c00001',
         password: '1234aaaa',
-        eventScheduleId: 1,
         sportId: 1,
         momentFormatStr: 'LTS',
         errorReconnectDuration: 5000,
-        eventUpdateDuration: 20000,
-        eventPriceUpdateDuration: 10000,
+        eventUpdateDuration: 10000,
+        liveEventUpdateDuration: 2000,
         apiKeyDuration: 12000,
+        proxy: {
+          enableProxy: false,
+          proxySetting: {
+            host: '127.0.0.1',
+            port: 9000,
+            auth: {
+              username: 'mikeymike',
+              password: 'rapunz3l',
+            },
+          },
+        },
+        market: {
+          live: true,
+          today: true,
+          early: true,
+        },
       },
     },
     {
@@ -42,22 +40,6 @@ config.controller = {
       enabled: false,
       connectionKey: 'pinbet1',
       forBetting: false,
-      proxy: {
-        enableProxy: false,
-        proxySetting: {
-          host: '127.0.0.1',
-          port: 9000,
-          auth: {
-            username: 'mikeymike',
-            password: 'rapunz3l',
-          },
-        },
-      },
-      market: {
-        live: true,
-        today: true,
-        early: true,
-      },
       config: {
         username: 'Ch8ccctest',
         password: '1234aaaa',
@@ -68,37 +50,111 @@ config.controller = {
         eventPriceUpdateDuration: 10000,
         eventUpdateRetryDuration : 5000,
         leagueUpdateRetryDuration : 5000,
-        eventPriceUpdateRetryDuration : 5000
-      }
+        eventPriceUpdateRetryDuration : 5000,
+        proxy: {
+          enableProxy: false,
+          proxySetting: {
+            host: '127.0.0.1',
+            port: 9000,
+            auth: {
+              username: 'mikeymike',
+              password: 'rapunz3l',
+            },
+          },
+        },
+        market: {
+          live: true,
+          today: true,
+          early: true,
+        },
+      },
     },
     {
       connectionID: 'sbo',
       enabled: true,
       connectionKey: 'sbo1',
       forBetting: false,
-      proxy: {
-        enableProxy: false,
-        proxySetting: {
-          host: '127.0.0.1',
-          port: 9000,
-          auth: {
-            username: 'mikeymike',
-            password: 'rapunz3l',
-          },
-        },
-      },
-      market: {
-        live: true,
-        today: true,
-        early: true,
-      },
       config: {
-        username: 'Vdfb330',
-        password: '1234aaaa',
+        username: 'Vdfb0221',
+        password: 'aaaa1234',
         momentFormatStr: 'LTS',
         errorReconnectDuration: 5000,
-        updateDuration: 10000
-      }
+        updateDuration: 5000,
+        proxy: {
+          enableProxy: false,
+          proxySetting: {
+            host: '127.0.0.1',
+            port: 9000,
+            auth: {
+              username: 'mikeymike',
+              password: 'rapunz3l',
+            },
+          },
+        },
+        market: {
+          live: false,
+          today: false,
+          early: true,
+        },
+      },
+    },
+    {
+      connectionID: 'sbo',
+      enabled: true, 
+      connectionKey: 'sbo3',
+      forBetting: false,
+      config: {
+        username: 'Vdfb023',
+        password: 'aaaa1234',
+        momentFormatStr: 'LTS',
+        errorReconnectDuration: 5000,
+        updateDuration: 5000,
+        proxy: {
+          enableProxy: false,
+          proxySetting: {
+            host: '127.0.0.1',
+            port: 9000,
+            auth: {
+              username: 'mikeymike',
+              password: 'rapunz3l',
+            },
+          },
+        },
+        market: {
+          live: false,
+          today: true,
+          early: false,
+        },
+      },
+    },
+    {
+      connectionID: 'sbo',
+      enabled: true,
+      connectionKey: 'sbo2',
+      forBetting: false,
+      config: {
+        username: 'Vdfb022',
+        password: 'aaaa1234',
+        momentFormatStr: 'LTS',
+        errorReconnectDuration: 5000,
+        updateDuration: 1000,
+        proxy: {
+          enableProxy: false,
+          proxySetting: {
+            host: '127.0.0.1',
+            port: 9000,
+            auth: {
+              username: 'mikeymike',
+              password: 'rapunz3l',
+            },
+          },
+        },
+        market: {
+          live: true,
+          today: false,
+          early: false,
+        },
+      },
     },
     {
       connectionID: 'maxbet',

@@ -171,9 +171,9 @@ class RedisAutoPairingHandler {
     } else if (!_.has(this.googlingArr, keyword)) {
       //new search
       console.log('proceedGoogleSearch: new cache: %s', keyword);
-      this.googlingArr.keyword = [];
-      this.googlingArr.keyword.push(obj);
-      console.log(this.googlingArr.keyword);
+      this.googlingArr[keyword] = [];
+      this.googlingArr[keyword].push(obj);
+      console.log(this.googlingArr[keyword]);
       const requestResult = await this.axios.get('/customsearch/v1', { params: { key: 'AIzaSyD--ThlYnbnM1p9qCzfSEkRw8exq71XDcs', cx: '002761999912980462279:cvtlm1njr4u', q: keyword, num: 3 } });
       const result = _.map(requestResult.data.items, 'link');
       await this.createObjToStore('googledResult', keyword, { links: result });
@@ -184,7 +184,7 @@ class RedisAutoPairingHandler {
       delete this.googlingArr[keyword];
     } else {
       console.log('submitGoogleSearch: searching: %s', keyword);
-      this.googlingArr.keyword.push(obj);
+      this.googlingArr[keyword].push(obj);
     }
   }
   async proceedPairingInfo(obj) {
@@ -210,7 +210,7 @@ class RedisAutoPairingHandler {
         console.log(obj);
     }
     if (_.isUndefined(keyword)) {
-      console.log('something wrong');
+      console.log('something wrong, no keyword');
       console.log(obj);
     }
   }

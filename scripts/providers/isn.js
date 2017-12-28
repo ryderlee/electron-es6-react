@@ -1,7 +1,5 @@
-const connectionBase = require('./connectionBase');
-const _ = require('lodash');
+const connectionBase = require('./connectionBase'); const _ = require('lodash');
 // const rp = require('request-promise')
-const axios = require('axios');
 let numeral = require('numeral');
 const moment = require('moment');
 // const ReactDataGridPlugins = require('react-data-grid/addons')
@@ -23,21 +21,21 @@ class isn extends connectionBase {
     this.gameIdToGameType = {};
     this.eventIdToLeagueCode = {};
     this.marketSelectionIdToGameTypeStr = {};
+    this.priceBuffer = [];
     this.isEventListFirstCallCompleted = false;
     this.isEventPriceFirstCallCompleted = false;
-    this.previousEventPriceResponse = '';
-    this.previousEventResponse = '';
+    this.previousEventPriceResponse = {};
+    this.previousEventResponse = {};
 
     this.isLogInReady = false;
     this.isAPIKeyReady = false;
     this.isMemberInfoReady = false;
 
+    this.hasLive = false;
+
     this.defaultOptions = {
       responseType: 'json', // Automatically parses the JSON string in the response
     };
-  }
-  getUniqueCode() {
-    return `${this.providerCode}-${this._username}`;
   }
   start() {
     console.log('isn->start');
@@ -45,9 +43,6 @@ class isn extends connectionBase {
   }
   isReady() {
     return true;
-  }
-  setInfoHandler (ph) {
-    this._infoHandler = ph;
   }
   setConfig (config) {
     super.setConfig(config);
@@ -78,35 +73,35 @@ class isn extends connectionBase {
       binaryOddsFormat: '',
     };
   }
-  async callAPIGetEventList() {
-    console.log('isn->callAPIGetEventList');
-    if (!(this.isLoggedIn && this.isAPIKeyReady && this.isMemberInfoReady)) {
-      console.warn('callAPIGetEventList failed. isLoggedIn %s, isAPIKeyReady %s, isMemberInfoReady %s', this.isLoggedIn, this.isAPIKeyReady, this.isMemberInfoReady);
-      // this.updateEventListTimeout = setTimeout(_.bind(this.callAPIGetEventList, this), 100);
-      this.updateEventListTimeout = _.delay(_.bind(this.callAPIGetEventList, this), 100);
-      return false;
-    }
+  async callAPIGetEventList(eventScheduleId) {
+    console.log('isn->callAPIGetEventList:%s', eventScheduleId);
     let eventArr = {};
     // rp(_.extend({}, this.apiOptions, { url: ('http://www.apiisn.com/betting/api/event/list/' + this.config.sportId + '/' + this.config.eventScheduleId) })).promise().bind(this).then(function (response) {
-    return axios(`http://www.apiisn.com/betting/api/event/list/${this.config.sportId}/${this.config.eventScheduleId}`, _.extend({}, this.apiOptions))
-      .then(response => response.data)
+    return this.axios(`http://www.apiisn.com/betting/api/event/list/${this.config.sportId}/${eventScheduleId}`, _.extend({}, this.apiOptions))
       .then(async (response) => {
         // let responseStr = JSON.stringify(response);
         // if (responseStr === this.previousEventResponse) {
-        if (_.isEqual(response, this.previousEventResponse)) {
+        if (_.has(this.previousEventResponse, eventScheduleId)) this.previousEventResponse[eventScheduleId] = '';
+        if (_.isEqual(response.data, this.previousEventResponse[eventScheduleId])) {
           console.info('eventJson is same');
         } else {
           console.log('eventJson is diff');
           // this.previousEventResponse = responseStr;
-          this.previousEventResponse = response;
+          this.previousEventResponse[eventScheduleId] = response.data;
           eventArr = {};
           let leagueCode = '';
           let gameTypeStr = '';
-          _.each(response, (league) => {
+          if (eventScheduleId === 3) this.hasLive = false; // to reset the hasLive flag
+          _.each(response.data, (league) => {
             leagueCode = `${this.providerCode}-${league.leagueName}`;
             this.DBHandler.delaySetLeague(this.providerCode, leagueCode, league.leagueName);
             _.each(league.events, (event) => {
-              const isLive = event.eventScheduledId === 3 ? 1 : 0;
+              const isLive = eventScheduleId === 3 ? 1 : 0;
+              if (isLive === 1 && !this.hasLive) {
+                this.hasLive = true;
+              }
+
+
               this.DBHandler.delaySetEvent(this.providerCode, leagueCode, event.id, event.homeTeamId, event.homeTeamName, event.awayTeamId, event.awayTeamName, '0', moment.unix(event.startTime / 1000).toDate(), isLive);
               this.eventIdToLeagueCode[event.id] = leagueCode;
               // console.log('%s - %s vs %s', row.leagueName, event.homeTeamName, event.awayTeamName)
@@ -119,6 +114,8 @@ class isn extends connectionBase {
                 switch (market.marketType) {
                   case 'HT OU' :
                   case 'OU' :
+                  case 'RB OU':
+                  case 'RB HT OU':
                     _.each(market.marketLines, (marketLine) => {
                       const overIdx = _.findIndex(marketLine.marketSelections, { name: 'Over' });
                       const underIdx = _.findIndex(marketLine.marketSelections, { name: 'Under' });
@@ -132,12 +129,14 @@ class isn extends connectionBase {
                         this.gameIdToGameType[String(market.id)][1] = marketLine.marketSelections[underIdx].marketSelectionId;
                         this.marketSelectionIdToGameTypeStr[marketLine.marketSelections[overIdx].marketSelectionId] = gameTypeStr;
                         this.marketSelectionIdToGameTypeStr[marketLine.marketSelections[underIdx].marketSelectionId] = gameTypeStr;
-                        this.DBHandler.delaySetGame(this.providerCode, leagueCode, event.id, market.id, gameTypeStr, { market, marketLine });
+                        this.DBHandler.delaySetGame(this.providerCode, leagueCode, event.id, market.id, gameTypeStr);
                       }
                     });
                     break;
                   case 'HT AH' :
                   case 'AH' :
+                  case 'RB AH':
+                  case 'RB HT AH':
                     _.each(market.marketLines, (marketLine) => {
                       const homeIdx = _.findIndex(marketLine.marketSelections, { name: event.homeTeamName });
                       const awayIdx = _.findIndex(marketLine.marketSelections, { name: event.awayTeamName });
@@ -150,7 +149,7 @@ class isn extends connectionBase {
                         this.gameIdToGameType[String(market.id)][1] = marketLine.marketSelections[awayIdx].marketSelectionId;
                         this.marketSelectionIdToGameTypeStr[marketLine.marketSelections[homeIdx].marketSelectionId] = gameTypeStr;
                         this.marketSelectionIdToGameTypeStr[marketLine.marketSelections[awayIdx].marketSelectionId] = gameTypeStr;
-                        this.DBHandler.delaySetGame(this.providerCode, leagueCode, event.id, market.id, gameTypeStr, { market, marketLine });
+                        this.DBHandler.delaySetGame(this.providerCode, leagueCode, event.id, market.id, gameTypeStr);
                       }
                     });
                     break;
@@ -192,75 +191,87 @@ class isn extends connectionBase {
           await this.DBHandler.flushGame();
 
           this.isEventPriceFirstCallCompleted = true;
-          this.updateEventListTimeout = _.delay(_.bind(this.callAPIGetEventList, this), this.config.eventUpdateDuration);
           console.log('end updateEventList');
         }
-        this.updateEventListTimeout = _.delay(_.bind(this.callAPIGetEventList, this), this.config.eventUpdateDuration);
-        console.log('end updateEventList');
         return Promise.resolve(true);
-      }).catch((err) => {
-        console.error(err);
-        // this.refreshTimeout = setTimeout(_.bind(this.refresh, this), 1);
-        this.refreshTimeout = _.delay(_.bind(this.refresh, this), 1);
       });
   }
 
-  callAPIGetEventPrice () {
-    console.log('isn->callAPIGetEventPrice');
+  callAPIGetEventPrice (eventScheduleId) {
+    console.log('isn->callAPIGetEventPrice:', eventScheduleId);
     // console.log('in updateEventPriceList')
     // console.log('lastRequestKey: %s, %s', this.memberInfoOptions.lastRequestKey, this.isEventReady)
-    if (this.isLoggedIn && this.isAPIKeyReady && this.isMemberInfoReady && this.isEventListFirstCallCompleted) {
-      console.log('callAPIGetEventPrice not ready, isLoggedIn: %s, isAPIKeyReady: %s, isMemberInfoReady: %s, isEventListFirstCallCompleted: %s', this.isLoggedIn, this.isAPIKeyReady, this.isMemberInfoReady, this.isEventListFirstCallCompleted);
-      // this.updateEventPriceTimeout = setTimeout(_.bind(this.callAPIGetEventPrice, this), 100)
-      this.updateEventPriceTimeout = _.delay(_.bind(this.callAPIGetEventPrice, this), 100);
-      return true;
-    }
     // rp(_.extend({}, this.apiOptions, {url: 'http://www.apiisn.com/betting/api/event/pricelist/' + this.config.sportId + '/' + this.memberInfoOptions.oddsGroupId + '/' + this.memberInfoOptions.binaryOddsFormat + '/' + this.config.eventScheduleId + '/' + this.memberInfoOptions.lastRequestKey})).promise().bind(this).then(function (response) {
-    return axios(`http://www.apiisn.com/betting/api/event/pricelist/${this.config.sportId}/${this.memberInfoOptions.oddsGroupId}/${this.memberInfoOptions.binaryOddsFormat}/${this.config.eventScheduleId}/${this.memberInfoOptions.lastRequestKey}`, _.extend({}, this.apiOptions))
+    if (_.isUndefined(this.memberInfoOptions.lastRequestKey)) throw Error();
+    return this.axios(`http://www.apiisn.com/betting/api/event/pricelist/${this.config.sportId}/${this.memberInfoOptions.oddsGroupId}/${this.memberInfoOptions.binaryOddsFormat}/${eventScheduleId}/${this.memberInfoOptions.lastRequestKey}`, _.extend({}, this.apiOptions))
       .catch((error) => {
-        this.reset();
-        return;
+        throw error;
+        // this.reset();
       })
-      .then((response) => { return response.data; })
       .then((response) => {
-        const responseStr = JSON.stringify(response.priceList);
-        if (responseStr === this.previousEventPriceResponse) {
+        if (!_.has(this.previousEventPriceResponse, eventScheduleId)) this.previousEventPriceResponse[eventScheduleId] = '';
+        const responseStr = JSON.stringify(response.data.priceList);
+        if (responseStr === this.previousEventPriceResponse[eventScheduleId]) {
+          console.log('eventPirceList is same');
           return false;
-          // console.log('eventPirceList is same')
         }
         // console.log('eventPirceList is diff')
         // console.log('responseStr.length : %d, this.previousEeventPriceResponse.length : %d', responseStr.length, this.previousEventPriceResponse.length)
-        this.previousEventPriceResponse = responseStr;
+        this.previousEventPriceResponse[eventScheduleId] = responseStr;
         let tmpIdx;
         let gameTypeStr = null;
-        _.each(response.priceList, (price) => {
+
+        _.each(response.data.priceList, (price) => {
           gameTypeStr = this.marketSelectionIdToGameTypeStr[price.marketSelectionId];
           tmpIdx = _.indexOf(this.gameIdToGameType[String(price.marketId)], price.marketSelectionId);
           if (tmpIdx > -1 && _.isString(gameTypeStr) && !_.isNull(gameTypeStr)) {
             this.DBHandler.delaySetOdds(this.providerCode, this.eventIdToLeagueCode[price.eventId], price.eventId, price.marketId, gameTypeStr, price.marketSelectionId, tmpIdx, price.decimalOdds, -1, price);
           } else {
-            // TODO: check what if there are not found case
-            // not found
+            // console.log('isn->nogame->no game data yet:', price.eventId, price.marketId, price.marketSelectionId);
+            // not found, could be not OU and not AH
           }
           gameTypeStr = null;
         });
         return this.DBHandler.flushOdds()
           .then(() => {
-            this.memberInfoOptions.lastRequestKey = response.lastRequestKey;
+            this.memberInfoOptions.lastRequestKey = response.data.lastRequestKey;
             // this.updateEventPriceTimeout = setTimeout(_.bind(this.callAPIGetEventPrice, this), this.config.eventPriceUpdateDuration);
-            this.updateEventPriceTimeout = _.delay(_.bind(this.callAPIGetEventPrice, this), this.config.eventPriceUpdateDuration);
             return true;
           });
-      })
-      .catch((err) => {
-        console.error(err);
-        // this.refreshTimeout = setTimeout(_.bind(this.refresh, this), this.config.errorReconnectDuration)
-        this.refreshTimeout = _.delay(_.bind(this.refresh, this), this.config.errorReconnectDuration);
       });
     // console.log('end updateEventPrice')
   }
 
-  refresh(activateTimeout = false) {
+  async callOnce(setSchedule = false) {
+    clearTimeout(this.updateEventListTimeout);
+    if (this.isLoggedIn && this.isAPIKeyReady && this.isMemberInfoReady) {
+      try {
+        console.log(this.config.market);
+        if (this.config.market.live === true) {
+          await this.callAPIGetEventList(3);
+          await this.callAPIGetEventPrice(3);
+        }
+        if (this.config.market.today === true) {
+          await this.callAPIGetEventList(2);
+          await this.callAPIGetEventPrice(2);
+        }
+        if (this.config.market.early === true) {
+          await this.callAPIGetEventList(1);
+          await this.callAPIGetEventPrice(1);
+        }
+      } catch (e) {
+        console.log(e);
+        this.refreshTimeout = _.delay(await _.bind(this.refresh, this), this.config.errorReconnectDuration);
+      }
+    }
+    if (setSchedule) {
+      this.updateEventListTimeout = _.delay(_.bind(await this.callOnce, this),
+        this.hasLive ? this.config.liveEventUpdateDuration : this.config.eventUpdateDuration, true);
+    }
+    return Promise.resolve(true);
+  }
+
+  async refresh(activateTimeout = false) {
     console.log('isn->refresh');
     if (!_.isNull(this.updateAPIKeyTimeout)) {
       clearTimeout(this.updateAPIKeyTimeout);
@@ -268,41 +279,41 @@ class isn extends connectionBase {
     if (this.isLoggedIn) {
       if (activateTimeout) {
         clearTimeout(this.updateEventListTimeout);
-        clearTimeout(this.updateEventPriceTimeout);
       }
       this.isAPIKeyReady = false;
       this.isMemberInfoReady = false;
       console.log('callAPIGetAPIKey');
       // rp(_.extend({}, this.apiKeyOptions, {url: 'http://www.apiisn.com/betting/api/member/apikey'})).promise().bind(this).then(function (response) {
-      return axios('http://www.apiisn.com/betting/api/member/apikey', _.extend({}, this.apiKeyOptions))
+      return this.axios('http://www.apiisn.com/betting/api/member/apikey', _.extend({}, this.apiKeyOptions))
         .catch((error) => {
           this.reset();
           return true;
         })
-        .then((response) => { return response.data; })
         .then((response) => {
           // console.log('User API success: %s ', response.apiKey)
-          this.apiOptions.headers.apiKey = response.apiKey;
+          this.apiOptions.headers.apiKey = response.data.apiKey;
           this.isAPIKeyReady = true;
           // this.updateAPIKeyTimeout = setTimeout(_.bind(this.refresh, this), this.config.apiKeyDuration)
           this.updateAPIKeyTimeout = _.delay(_.bind(this.refresh, this), this.config.apiKeyDuration);
           // return rp(_.extend({}, this.apiOptions, {uri: 'http://www.apiisn.com/betting/api/member/info'})).promise().bind(this)
-          return axios('http://www.apiisn.com/betting/api/member/info', _.extend({}, this.apiOptions)).then();
+          return this.axios('http://www.apiisn.com/betting/api/member/info', _.extend({}, this.apiOptions)).then();
           // updateEventTimeout = setTimeout(updateEventList, 1, false)
         })
-        .then((response) => { return response.data; })
-        .then((response) => {
+        .then(async (response) => {
           console.log('User info success');
-          this.memberInfoOptions.binaryOddsFormat = response.binaryOddsFormat;
-          this.memberInfoOptions.oddsGroupId = response.oddsGroupId;
+          this.memberInfoOptions.binaryOddsFormat = response.data.binaryOddsFormat;
+          this.memberInfoOptions.oddsGroupId = response.data.oddsGroupId;
           this.isMemberInfoReady = true;
           if (activateTimeout) {
             /*
             this.updateEventListTimeout = setTimeout(_.bind(this.callAPIGetEventList, this), 1);
             this.updateEventPriceTimeout = setTimeout(_.bind(this.callAPIGetEventPrice, this), 1);
             */
+            /*
             this.updateEventListTimeout = _.delay(_.bind(this.callAPIGetEventList, this), 1);
             this.updateEventPriceTimeout = _.delay(_.bind(this.callAPIGetEventPrice, this), 1);
+            */
+            await this.callOnce(true);
           }
           return true;
         })
@@ -327,17 +338,14 @@ class isn extends connectionBase {
     clearTimeout(this.refreshTimeout);
     clearTimeout(this.resetTimeout);
     // rp(_.extend({}, this.loginOptions, {url: 'http://www.apiisn.com/betting/api/member/login'})).then((response) => {
-    return axios('http://www.apiisn.com/betting/api/member/login', _.extend({}, this.loginOptions ))
+    return this.axios('http://www.apiisn.com/betting/api/member/login', _.extend({}, this.loginOptions ))
       .then((response) => {
-        return response.data;
-      })
-      .then((response) => {
-        console.log('User login success: %s ', response.userId);
-        this.apiKeyOptions.headers.userId = response.userId;
-        this.apiKeyOptions.headers.memberToken = response.memberToken;
-        this.apiOptions.headers.userId = response.userId;
-        this.apiOptions.headers.memberToken = response.memberToken;
-        this.memberInfoOptions.lastRequestKey = response.lastRequestKey;
+        console.log('User login success: %s ', response.data.userId);
+        this.apiKeyOptions.headers.userId = response.data.userId;
+        this.apiKeyOptions.headers.memberToken = response.data.memberToken;
+        this.apiOptions.headers.userId = response.data.userId;
+        this.apiOptions.headers.memberToken = response.data.memberToken;
+        this.memberInfoOptions.lastRequestKey = response.data.lastRequestKey;
         this.isLoggedIn = true;
         // updateAPIKeyTimeout = setTimeout(updateAPIKey, 1)
         _.delay(_.bind(this.refresh, this), 1, true);
