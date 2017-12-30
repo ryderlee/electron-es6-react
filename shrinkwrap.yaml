@@ -38,6 +38,7 @@ dependencies:
   request: 2.83.0
   request-promise: 4.2.2
   request-promise-native: 1.0.5
+  sleep-promise: 2.0.0
   source-map-support: 0.4.18
   string-similarity: 1.2.0
   uniqid: 4.1.1
@@ -5106,6 +5107,10 @@ packages:
       node: '>=0.10.0'
     resolution:
       integrity: sha1-xB8vbDn8FtHNF61LXYlhFK5HDVU=
+  /sleep-promise/2.0.0:
+    dev: false
+    resolution:
+      integrity: sha1-5+eY3+VsBE2oWILXbSKpmARmPEE=
   /slice-ansi/1.0.0:
     dependencies:
       is-fullwidth-code-point: 2.0.0
@@ -5810,6 +5815,7 @@ specifiers:
   request: ^2.79.0
   request-promise: ^4.1.1
   request-promise-native: ^1.0.3
+  sleep-promise: ^2.0.0
   source-map-support: ^0.4.8
   string-similarity: ^1.2.0
   uniqid: ^4.1.1

@@ -10,8 +10,7 @@ class connectionBase {
     this.config = null;
     this.axios = null;
   }
-
-  init() {
+  getNewConnection() {
     if (this.config.proxy.enableProxy) {
       this.axios = axios.create({
         proxy: this.config.proxy.proxySetting,
@@ -19,6 +18,9 @@ class connectionBase {
     } else {
       this.axios = axios.create();
     }
+  }
+  init() {
+    this.getNewConnection();
   }
   setDBHandler(ph) {
     this.DBHandler = ph;

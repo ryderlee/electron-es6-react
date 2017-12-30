@@ -12,6 +12,7 @@ const Promise = require('bluebird');
 const Numeral = require('numeral');
 const qs = require('querystring');
 const moment = require('moment-timezone');
+const sleep = require('sleep-promise');
 
 // const fetch = require('fetch-cookie')(require('node-fetch'))
 // let needle = require('needle')
@@ -35,8 +36,7 @@ class sbo extends connectionBase {
     this.marketSelectionIdToGameTypeStr = {};
     this.isEventListFirstCallCompleted = false;
     this.isEventPriceFirstCallCompleted = false;
-    this.previousEventPriceResponse = '';
-    this.previousEventResponse = '';
+    this.leagueQueue = {};
 
 
     this.gameTypeRegex = /.+? (-?\d*\.{0,1}\d+) @/g;
@@ -51,6 +51,9 @@ class sbo extends connectionBase {
     this.baseURL = '';
     this.marketIdPage = {};
     this.leagueCrawlURL = {};
+    this.marketIdPage['today'] = 1;
+    this.marketIdPage['live'] = 3;
+    this.marketIdPage['early'] = 2;
 
     this.defaultOptions = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.113 Safari/537.36' };
   }
@@ -67,45 +70,28 @@ class sbo extends connectionBase {
     this._username = this.config.username;
   }
 
-  login() {
+  async login() {
     console.debug('sbo->login');
+    this.getNewConnection();
     // return this.axios('http://wap.beer777.com/web_root/public/login.aspx', { withCredentials: true })
-    return this.myCrawl('http://wap.beer777.com/web_root/public/login.aspx')
-      .then((response) => {
-        if (_.has(response.request, 'res') && _.has(response.request.res, 'responseUrl')) {
-          const targetUrl = response.request.res.responseUrl;
-          let $ = cheerio.load(response.data);
-          // let fd = new FormData();
-          let fd = {};
-          fd.ctl01$nUsername = this.config.username;
-          fd.ctl01$nPassword = this.config.password;
-          fd.__EVENTTARGET = 'cmd_english_login';
-          fd.__EVENTARGUMENT = 'Form1';
-          const url = Url.resolve(targetUrl, String($('#Form1').attr('action')));
-          const origin = Url.parse(targetUrl);
-          return this.axios(url, { method: 'post', data: qs.stringify(fd), withCredentials: true, headers: this.defaultOptions });
-          // return this.axios.post(url, qs.stringify(fd));
-        } else {
-          return false;
-        }
-
-      })
-      .then(async (loginResponse) => {
-        console.log('------------------------------------');
-        this.isLoggedIn = true;
-        this.baseURL = loginResponse.request.res.responseUrl;
-        console.log(this.baseURL);
-        this.marketIdPage['today'] = 1;
-        this.marketIdPage['live'] = 3;
-        this.marketIdPage['early'] = 2;
-        if(this.config.market.live)
-          await this.crawl('live');
-        if(this.config.market.today)
-          await this.crawl('today');
-        if(this.config.market.early)
-          await this.crawl('early');
-      })
-      .then(_.delay(() => this.login(), this.config.updateDuration));
+    const response = await this.myCrawl('http://wap.beer777.com/web_root/public/login.aspx');
+    if (_.has(response.request, 'res') && _.has(response.request.res, 'responseUrl')) {
+      const targetUrl = response.request.res.responseUrl;
+      const $ = cheerio.load(response.data);
+      // let fd = new FormData();
+      const fd = {};
+      fd.ctl01$nUsername = this.config.username;
+      fd.ctl01$nPassword = this.config.password;
+      fd.__EVENTTARGET = 'cmd_english_login';
+      fd.__EVENTARGUMENT = 'Form1';
+      const url = Url.resolve(targetUrl, String($('#Form1').attr('action')));
+      const loginResponse = await this.axios(url, { method: 'post', data: qs.stringify(fd), withCredentials: true, headers: this.defaultOptions });
+      this.baseURL = loginResponse.request.res.responseUrl;
+      this.isLoggedIn = true;
+      return Promise.resolve(true);
+      // return this.axios.post(url, qs.stringify(fd));
+    } 
+    return Promise.reject('cant login');
   }
 
   // eslint-disable-next-line class-methods-use-this
@@ -133,6 +119,8 @@ class sbo extends connectionBase {
           timeInfo = timeInfo.replace(' **:**', '');
           if((timeInfo.split('/').length > 2))  datetime = moment.tz(`${timeInfo} 00:00:00`, 'MM/DD/YYYY HH:mm:ss', 'Asia/Hong_Kong').utc().toDate();
           else datetime = moment.tz(`${timeInfo}/${moment.tz('Asia/Hong_Kong').format('YYYY')} 00:00:00`, 'MM/DD/YYYY HH:mm:ss', 'Asia/Hong_Kong').utc().toDate();
+          const now = new Date();
+          if(datetime < now) datetime = moment.tz(`${timeInfo}/${moment.tz('Asia/Hong_Kong').add(1, 'year').format('YYYY')} 00:00:00`, 'MM/DD/YYYY HH:mm:ss', 'Asia/Hong_Kong').utc().toDate();
           // console.log('%s %s', timeInfo, moment(datetime).tz('Asia/Hong_Kong').format('YYYYMMDDHHmmss'));
         } else {
           const tmpArr = timeInfo.split(' ');
@@ -193,33 +181,39 @@ class sbo extends connectionBase {
     const regex = /<a href="(.[^"]+?)">(.[^"]+?)<\/a> <\/form>/g;
     const matches = this.regexMatch(responseData, regex);
     if (matches.length > 0) {
-      console.debug('going back success<------');
+      // console.debug('going back success<------');
       await this.myCrawl(Url.resolve(this.baseURL, matches[0][1]));
     } else {
       // console.log(responseData);
-      console.log('no going back <-------');
+      // console.log('no going back <-------');
     }
     return Promise.resolve(this);
   }
 
   async crawlAndMatch(url, patternRegex, isGoingBack = false, isGame = false, debugInfo = null) {
     const response = await this.myCrawl(url);
+    if (response.data.indexOf('<title>ERROR</title>') > -1) {
+      return Promise.reject('title error ' + url + ' ' + (response.data.indexOf('Multiple login') > -1 ? 'multiLogin' : 'sessionTimeout'));
+    }
     if (!isGame) {
       // console.log(response.data);
       return Promise.resolve(this.regexMatch(response.data, patternRegex));
     }
+    console.log(url);
     const HDPRegex ={ period:0, gameType:'handicap', pattern: /Handicap[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>/g };
     const OURegex = { period:0, gameType:'ou', pattern: /Over\/Under[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>/g };
     const firstHalfHDPRegex = { period:1, gameType:'handicap', pattern: /First Half Hdp[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>/g };
     const firstHalfOURegex = { period:1, gameType:'ou', pattern: /First Half O\/U[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>/g };
     const returnResult = {};
+    let gameFound = false;
     _.each({ HDPRegex, OURegex, firstHalfHDPRegex, firstHalfOURegex }, (regex) => {
       // console.log(response.data);
       const patternMatch = this.regexMatch(response.data, regex.pattern);
       // const patternMatch = response.data.match(regex.pattern);
       // if (!_.isNull(debugInfo)) console.log(debugInfo);
       if (patternMatch.length > 0) {
-        console.debug('game found: %s %s-%s, length:%d', debugInfo, regex.gameType, regex.period, patternMatch.length);
+        gameFound = true;
+        // console.debug('game found: %s %s-%s, length:%d', debugInfo, regex.gameType, regex.period, patternMatch.length);
         _.each(patternMatch, (matchLine) => {
           // console.log('--%s--', matchLine);
           const resultArr = [];
@@ -241,75 +235,114 @@ class sbo extends connectionBase {
           */
           returnResult[gameType] = resultArr;
         });
-      } else {
-        console.log('game not found! - %s, %s, %s', debugInfo, regex.gameType, regex.period);
       }
     });
+    if (!gameFound) return Promise.reject('game not found');
     if (isGoingBack) await this.goingBack(response.data);
     return Promise.resolve(returnResult);
   }
 
   async crawl (marketId) {
-    try {
-      await this.myCrawl(Url.resolve(this.baseURL, `odds-sport.aspx?page=${this.marketIdPage[marketId]}`));
-      // await this.axios(Url.resolve(this.baseURL, `odds-sport.aspx?page=${this.marketIdPage[marketId]}`), _.extend({}, this.defaultOptions, { withCredentials: true }));
-      const leagueRegexResultArr = await this.crawlAndMatch(Url.resolve(this.baseURL, 'odds-league.aspx?sport=1'), /odds-match.aspx\?league=(\d*)">(.+?)<\/a>/g);
-      if (leagueRegexResultArr.length > 0) {
-        const tmpResponses = await Promise.map(leagueRegexResultArr, async (leagueRegexResult) => {
-          const leagueName = leagueRegexResult[2];
-          const leagueId = leagueRegexResult[1];
-          this.DBHandler.delaySetLeague(this.providerCode, leagueId, leagueName);
-          await this.DBHandler.flushLeague();
-          const matchRegexResultArr = await this.crawlAndMatch(Url.resolve(this.baseURL, `odds-match.aspx?league=${leagueId}`)
-            , /odds-main.aspx\?match=(\d*)">(.+?)<\/a>/g);
-          console.log('%s -> size : %d', leagueId, matchRegexResultArr.length);
-          const tmpResult = await Promise.map(matchRegexResultArr, async (matchRegexResult) => {
-            const matchName = matchRegexResult[2];
-            const matchId = matchRegexResult[1];
-            const eventInfo = this.extractEventInfo(marketId, matchName);
-            this.DBHandler.delaySetEvent(this.providerCode, leagueId, matchId,
-              eventInfo.homeTeam, eventInfo.homeTeam, eventInfo.awayTeam, eventInfo.awayTeam, '0', eventInfo.datetime, eventInfo.isLive);
-            const gameRegex = /ticket.aspx\?(.+?)">(.+?)<\/a>/g;
-            const gameRegexResults = await this.crawlAndMatch(Url.resolve(this.baseURL, `odds-main.aspx?match=${matchId}`), gameRegex, true, true, `${eventInfo.homeTeam}-${eventInfo.awayTeam}`);
-            // console.log('gameRegexResult - %s', `${eventInfo.homeTeam}-${eventInfo.awayTeam}`);
-            _.each(gameRegexResults, (gameRegexResult, key) => {
-              const gameType = key;
-              // console.log(gameRegexResult);
-              const gameCode = `${this.providerCode}-${matchId}-${gameType}`;
-              this.DBHandler.delaySetGame(this.providerCode, leagueId, matchId, gameCode, gameType);
-              _.each(gameRegexResult, (gameRegexResultIndividual) => {
-                const urlResult = Url.parse(Url.resolve(this.baseURL, `ticket.aspx?${gameRegexResultIndividual[1]}`), true);
-                // console.log(urlResult);
-                const isHomeOrAway = (urlResult.query.option === 'h' ? 0 : 1);
-                // console.log('sbo: odds submit: %s %s %s', `${leagueId}_${matchId}_${gameCode}_${isHomeOrAway}`, isHomeOrAway, urlResult.query.odds);
-                this.DBHandler.delaySetOdds(this.providerCode, leagueId, matchId, gameCode, gameType,
-                  // `${leagueId}_${matchId}_${gameCode}_u${urlResult.query.id}_${isHomeOrAway}`, isHomeOrAway, urlResult.query.odds, -1);
-                  `${leagueId}_${matchId}_${gameCode}_${isHomeOrAway}`, isHomeOrAway, urlResult.query.odds, -1);
+    console.log('crawl');
+    if (!_.has(this.leagueQueue, marketId)) this.leagueQueue[marketId] = [];
+    let crawlSuccess = false;
+    while (!crawlSuccess) {
+      try {
+        if (!this.isLoggedIn) {
+          console.log('login: %s', marketId);
+          await this.login();
+        }
+        await this.myCrawl(Url.resolve(this.baseURL, `odds-sport.aspx?page=${this.marketIdPage[marketId]}`));
+        // await this.axios(Url.resolve(this.baseURL, `odds-sport.aspx?page=${this.marketIdPage[marketId]}`), _.extend({}, this.defaultOptions, { withCredentials: true }));
+        if(this.leagueQueue[marketId].length == 0) {
+          console.debug('new crawl: %s', marketId);
+          this.leagueQueue[marketId] = await this.crawlAndMatch(Url.resolve(this.baseURL, 'odds-league.aspx?sport=1'), /odds-match.aspx\?league=(\d*)">(.+?)<\/a>/g);
+        } else {
+          console.debug('resume from previous: %s %d', marketId, this.leagueQueue[marketId].length);
+          await this.myCrawl(Url.resolve(this.baseURL, 'odds-league.aspx?sport=1'));
+        }
+        if (this.leagueQueue[marketId].length > 0) {
+          const tmpResponses = await Promise.map(this.leagueQueue[marketId], async (leagueRegexResult) => {
+            const leagueName = leagueRegexResult[2];
+            const leagueId = leagueRegexResult[1];
+            const isCrawlFinished = false;
+            this.DBHandler.delaySetLeague(this.providerCode, leagueId, leagueName);
+            await this.DBHandler.flushLeague();
+            const matchRegexResultArr = await this.crawlAndMatch(Url.resolve(this.baseURL, `odds-match.aspx?league=${leagueId}`)
+              , /odds-main.aspx\?match=(\d*)">(.+?)<\/a>/g);
+            const tmpResult = await Promise.map(matchRegexResultArr, async (matchRegexResult) => {
+              const matchName = matchRegexResult[2];
+              const matchId = matchRegexResult[1];
+              const eventInfo = this.extractEventInfo(marketId, matchName);
+              this.DBHandler.delaySetEvent(this.providerCode, leagueId, matchId,
+                eventInfo.homeTeam, eventInfo.homeTeam, eventInfo.awayTeam, eventInfo.awayTeam, '0', eventInfo.datetime, eventInfo.isLive);
+              const gameRegex = /ticket.aspx\?(.+?)">(.+?)<\/a>/g;
+              const gameRegexResults = await this.crawlAndMatch(Url.resolve(this.baseURL, `odds-main.aspx?match=${matchId}`), gameRegex, true, true, `${eventInfo.homeTeam}-${eventInfo.awayTeam}`);
+              // console.log('gameRegexResult - %s', `${eventInfo.homeTeam}-${eventInfo.awayTeam}`);
+              _.each(gameRegexResults, (gameRegexResult, key) => {
+                const gameType = key;
+                // console.log(gameRegexResult);
+                const gameCode = `${this.providerCode}-${matchId}-${gameType}`;
+                this.DBHandler.delaySetGame(this.providerCode, leagueId, matchId, gameCode, gameType);
+                _.each(gameRegexResult, (gameRegexResultIndividual) => {
+                  const urlResult = Url.parse(Url.resolve(this.baseURL, `ticket.aspx?${gameRegexResultIndividual[1]}`), true);
+                  // console.log(urlResult);
+                  const isHomeOrAway = (urlResult.query.option === 'h' ? 0 : 1);
+                  // console.log('sbo: odds submit: %s %s %s', `${leagueId}_${matchId}_${gameCode}_${isHomeOrAway}`, isHomeOrAway, urlResult.query.odds);
+                  this.DBHandler.delaySetOdds(this.providerCode, leagueId, matchId, gameCode, gameType,
+                    // `${leagueId}_${matchId}_${gameCode}_u${urlResult.query.id}_${isHomeOrAway}`, isHomeOrAway, urlResult.query.odds, -1);
+                    `${leagueId}_${matchId}_${gameCode}_${isHomeOrAway}`, isHomeOrAway, urlResult.query.odds, -1);
+                });
               });
-            });
-            await this.DBHandler.flushEvent();
-            await this.DBHandler.flushGame();
-            await this.DBHandler.flushOdds();
-            return Promise.resolve(gameRegexResults);
-          }, { concurrency: 4 });
-          await this.myCrawl(Url.resolve(this.baseURL, `odds-league.aspx?page=${this.marketIdPage[marketId]}&sport=1`));
-          return tmpResult;
-        }, { concurrency: 1 });
-        console.log('finished?????????');
-      } 
-      console.log(`end ${marketId} market from sbo`);
-      return Promise.resolve([]);
-    } catch (error) {
-      console.error(error);
+              await this.DBHandler.flushEvent();
+              await this.DBHandler.flushGame();
+              await this.DBHandler.flushOdds();
+              return Promise.resolve(gameRegexResults);
+            }, { concurrency: 6 });  // was concurrency: 4
+            this.leagueQueue[marketId] = _.without(this.leagueQueue[marketId], leagueRegexResult);
+            await this.myCrawl(Url.resolve(this.baseURL, `odds-league.aspx?page=${this.marketIdPage[marketId]}&sport=1`));
+            return tmpResult;
+          }, { concurrency: 1 });
+        }
+        console.log(`end crawling from sbo : %s`, marketId);
+        crawlSuccess = true;
+        await this.logout();
+        return Promise.resolve();
+      } catch (error) {
+        console.error('crawl:error - %s, %d', marketId, this.leagueQueue[marketId].length, error);
+        await this.logout();
+      }
     }
-    setTimeout(() => this.crawl(marketId), this.config.updateDuration);
+  } 
+  async logout() {
+    await this.myCrawl(Url.resolve(this.baseURL.replace('restricted', 'public'), 'logout.aspx'));
+    this.isLoggedIn = false;
+    this.getNewConnection();
+    return Promise.resolve();
   }
-
-
+  async startCrawl() {
+    try {
+      if (this.isLoggedIn) {
+        await this.logout();
+      }
+      console.log('------------------------------------');
+      if (this.config.market.live) await this.crawl('live');
+      if (this.config.market.today) await this.crawl('today');
+      if (this.config.market.early) await this.crawl('early');
+      console.log('scheduling next startCrawl()');
+      console.log(this.config.market);
+      _.delay(() => this.startCrawl(), this.config.updateDuration);
+    } catch (e) {
+      console.error(e);
+      this.logout();
+      console.error('error:scheduling next startCrawl()');
+      _.delay(() => this.startCrawl(), this.config.errorReconnectDuration);
+    }
+  }
   reset() {
     this.isLoggedIn = false;
     // rp(_.extend({}, this.loginOptions, {url: 'http://www.apiisn.com/betting/api/member/login'})).then((response) => {
-    return this.login();
+    return this.startCrawl();
   }
 
   start() {

@@ -75,7 +75,8 @@ class RedissureBetHandler {
         // this.findOddsBetsByOddsObj(leftHandOddsObj, rightHandOddsObj);
         const leftHandOdds = (parseFloat(leftHandOddsObj.odds) > 2.0) ? (-1 / (parseFloat(leftHandOddsObj.odds) - 1)) : parseFloat(leftHandOddsObj.odds) - 1;
         const rightHandOdds = (parseFloat(rightHandOddsObj.odds) > 2.0) ? (-1 / (parseFloat(rightHandOddsObj.odds) - 1)) : parseFloat(rightHandOddsObj.odds) - 1;
-        if ((leftHandOdds + rightHandOdds > 2) || ((leftHandOdds + rightHandOdds) > 0 && (leftHandOdds < 0 || rightHandOdds < 0))
+        if ((leftHandOdds + rightHandOdds > 2) 
+          || ((leftHandOdds + rightHandOdds) > 0 && (leftHandOdds < 0 || rightHandOdds < 0))
         ) {
           console.log('old odds found@%s: %s %s %s %s, %s %s %s %s, %s', moment().utc().format(), leftHandOddsObj.id, leftHandOddsObj.odds, leftHandOdds, leftHandOddsObj.lastPingDatetime,
             rightHandOddsObj.id, rightHandOddsObj.odds, rightHandOdds, rightHandOddsObj.lastPingDatetime,
@@ -86,7 +87,7 @@ class RedissureBetHandler {
           && cutOffDatetime.isBefore(moment(leftHandOddsObj.lastPingDatetime))
           && cutOffDatetime.isBefore(moment(rightHandOddsObj.lastPingDatetime))
         ) {
-          console.log('!!!odds found@%s: %s %s %s %s, %s %s %s %s, %s', moment().utc().format(), leftHandOddsObj.id, leftHandOddsObj.odds, leftHandOdds, leftHandOddsObj.lastPingDatetime,
+          console.log('!!!!odds found@%s: %s %s %s %s, %s %s %s %s, %s', moment().utc().format(), leftHandOddsObj.id, leftHandOddsObj.odds, leftHandOdds, leftHandOddsObj.lastPingDatetime,
             rightHandOddsObj.id, rightHandOddsObj.odds, rightHandOdds, rightHandOddsObj.lastPingDatetime,
             parseFloat(leftHandOdds) + parseFloat(rightHandOdds));
 
@@ -143,7 +144,7 @@ class RedissureBetHandler {
           }
         });
       } else {
-        console.log('not under monitor:', md.content);
+        // console.log('not under monitor:', md.content);
       }
     }
     return Promise.resolve(true);

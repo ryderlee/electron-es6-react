@@ -1,12 +1,11 @@
-
 const _ = require('lodash');
 const Redis = require('ioredis');
 const utils = Redis.utils;
 const Promise = require('bluebird');
 const querystring = require('querystring');
 const moment = require('moment');
-const axios = require('axios');
 const uniqid = require('uniqid');
+const sleep = require('sleep-promise');
 
 Redis.Command.setReplyTransformer('hgetall', (result) => {
   if (Array.isArray(result)) {
@@ -344,7 +343,21 @@ class InfoHandler {
 
 
   }
-
+  async lock(key, maxCount = 10, timeout = 200, count=0) {
+    let success = false;
+    while(!success && count < maxCount) {
+      if(await this.redis.set(`lock:${key}`, key, 'NX', 'PX', 4000)) {
+        success = true;
+      } else {
+        sleep(timeout);
+        count =+ 1;
+      }
+    }
+    return true;
+  }
+  async unlock(key) {
+    return this.redis.del(`lock:${key}`);
+  }
   async setSets(listType, inputArr) {
     const listArr = (!_.isArray(inputArr) ? [inputArr] : inputArr);
     const pipe = this.redis.pipeline();
@@ -376,6 +389,20 @@ class InfoHandler {
     });
     console.log('setSets #:%d, %d', isDiff, isDuplicate);
     return pipe2.exec();
+  }
+  async addItemsToSets(setType, inputArr ) {
+    const listArr = (!_.isArray(inputArr) ? [inputArr] : inputArr);
+    const pipe = this.redis.pipeline();
+    let isDiff = 0;
+    _.each(listArr, (list) => {
+      const key = list._setId;
+      // diff / new
+      isDiff += 1;
+      pipe.sadd(key, list.id);
+      pipe.publish(`setUpdate_${setType}`, `set ${key}`);
+    }); 
+    console.log('addItemsToSets #s: %d', isDiff);
+    return pipe.exec();
   }
   async setObjects(objType, inputObjArr) {
     // console.log('->setObjects');
@@ -569,12 +596,11 @@ class InfoHandler {
       .then(this.flushSOTEvent())
       .then(Promise.resolve(true));
   }
-  flushEvent() {
-    return this.setObjects('event', this.eventBuff,
-      this.eventUpdateCallbacks, false).then(() => {
-      this.eventBuff = [];
-      return Promise.resolve(true);
-    });
+  async flushEvent() {
+    await this.setObjects('event', this.eventBuff);
+    await this.addItemsToSets('event', this.eventBuff);
+    this.eventBuff = [];
+    return Promise.resolve(true);
   }
 
   delaySetEvent(providerCode, leagueCode, eventCode, homeTeamCode, homeTeamName, awayTeamCode, awayTeamName, eventStatus, eventDatetime, eventIsLive = null) {
@@ -584,6 +610,7 @@ class InfoHandler {
     this.eventBuff.push({
       id: `obj:e#p:${providerCode}#l:${querystring.escape(leagueCode)}#e:${querystring.escape(eventCode)}`,
       searchId: `eid#p:${providerCode}#e:${eventCode}`,
+      _setId: `set:e#p:${String(providerCode)}`,
       objType: 'e',
       providerCode: String(providerCode),
       leagueCode: String(leagueCode),
@@ -671,20 +698,25 @@ class InfoHandler {
 
   async loadObj(key) {
     const result = await this.redis.hgetall(key);
-    if (!_.isNil(result))
-      return result;
+    if (!_.isNil(result) && !_.isUndefined(result) && !_.isEmpty(result)) return result;
     return null;
   }
   loadList(key) {
     const result = this.redis.smember(key);
     return result[1];
   }
+  /*
   loadEventGroup(eventObj) {
     const key = `kvp:eg#p:${eventObj.providerCode}#l:${eventObj.leagueCode}#e:${eventObj.eventCode}`;
     if (this.redis.exists(key)) {
       const obj = this.loadObj(key);
       return obj;
     }
+  }
+  */
+  async loadEventGroupLinkObj(eventObj) {
+    const key = `obj:egl#p:${eventObj.providerCode}#l:${querystring.escape(eventObj.leagueCode)}#e:${eventObj.eventCode}`;
+    return await this.loadObj(key);
   }
 
   extractProviderCode(key) {

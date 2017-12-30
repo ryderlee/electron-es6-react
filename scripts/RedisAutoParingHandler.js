@@ -114,10 +114,16 @@ class RedisAutoPairingHandler {
   async onUpdateEventMessageReceived(message) {
     const md = this.DBHandler.consumeMessage(message);
     if (md.command === 'set') {
-      const eventObj = await this.conn.hgetall(md.content);
-      if (!_.has(this.eventListForPairing, eventObj.providerCode)) this.eventListForPairing[eventObj.providerCode] = {};
-      this.eventListForPairing[eventObj.providerCode][eventObj.id] = eventObj;
-      await this.proceedPairingInfo(eventObj);
+      const eventObj = await this.DBHandler.loadObj(md.content);
+      const eglObj = await this.DBHandler.loadEventGroupLinkObj(eventObj);
+      if(_.isNil(eglObj) || _.isUndefined(eglObj) || _.isEmpty(eglObj)) {
+        console.log('isNew : %s', md.content);
+        if (!_.has(this.eventListForPairing, eventObj.providerCode)) this.eventListForPairing[eventObj.providerCode] = {};
+        this.eventListForPairing[eventObj.providerCode][eventObj.id] = eventObj;
+        await this.proceedPairingInfo(eventObj);
+      } else {
+        console.log('!isNil: %s', md.content);
+      }
     }
   }
 
@@ -173,17 +179,13 @@ class RedisAutoPairingHandler {
       console.log('proceedGoogleSearch: new cache: %s', keyword);
       this.googlingArr[keyword] = [];
       this.googlingArr[keyword].push(obj);
-      console.log(this.googlingArr[keyword]);
       const requestResult = await this.axios.get('/customsearch/v1', { params: { key: 'AIzaSyD--ThlYnbnM1p9qCzfSEkRw8exq71XDcs', cx: '002761999912980462279:cvtlm1njr4u', q: keyword, num: 3 } });
       const result = _.map(requestResult.data.items, 'link');
       await this.createObjToStore('googledResult', keyword, { links: result });
-      console.log('proceedGoogleSearch: keyword=%s', keyword);
-      console.log(this.googlingArr);
-      console.log(this.googlingArr[keyword]);
       await this.proceedPairing(keyword, this.googlingArr[keyword]);
       delete this.googlingArr[keyword];
     } else {
-      console.log('submitGoogleSearch: searching: %s', keyword);
+      console.log('proceedGooogleSearch: searching: %s', keyword);
       this.googlingArr[keyword].push(obj);
     }
   }
@@ -216,7 +218,7 @@ class RedisAutoPairingHandler {
   }
 
 
-  oneToManyEventMatching (eventObj, rightEventArr) {
+  oneToManyEventMatching (eventObj, rightEventArr, limitResultsTo= 1) {
     console.log('oneToManEventMatching : %s', rightEventArr.length);
     const eventObjDatetime = moment(eventObj.eventDatetime);
     const resultArr = _.map(rightEventArr, (o) => {
@@ -241,7 +243,11 @@ class RedisAutoPairingHandler {
 
 
     });
-    return _.orderBy(_.compact(resultArr), [o => o.pairingInfo.totalCLJ, o => o.pairingInfo.totalMetaphone], ['desc', 'desc']);
+    if(limitResultsTo > 0)
+      return _.orderBy(_.compact(resultArr), [o => o.pairingInfo.totalCLJ, o => o.pairingInfo.totalMetaphone], ['desc', 'desc']).slice(0, limitResultsTo);
+    else
+      return _.orderBy(_.compact(resultArr), [o => o.pairingInfo.totalCLJ, o => o.pairingInfo.totalMetaphone], ['desc', 'desc']);
+
   }
 
   async matchEvent(eventObj) {

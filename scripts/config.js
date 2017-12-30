@@ -75,7 +75,7 @@ config.controller = {
       connectionKey: 'sbo1',
       forBetting: false,
       config: {
-        username: 'Vdfb0221',
+        username: 'Vdfb021',
         password: 'aaaa1234',
         momentFormatStr: 'LTS',
         errorReconnectDuration: 5000,
