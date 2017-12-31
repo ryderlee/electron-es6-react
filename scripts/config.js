@@ -20,8 +20,8 @@ config.controller = {
         proxy: {
           enableProxy: false,
           proxySetting: {
-            host: '127.0.0.1',
-            port: 9000,
+            host: '139.59.3.255',
+            port: 7777,
             auth: {
               username: 'mikeymike',
               password: 'rapunz3l',
@@ -83,8 +83,8 @@ config.controller = {
         proxy: {
           enableProxy: false,
           proxySetting: {
-            host: '127.0.0.1',
-            port: 9000,
+            host: '139.59.3.255',
+            port: 7777,
             auth: {
               username: 'mikeymike',
               password: 'rapunz3l',
@@ -112,8 +112,8 @@ config.controller = {
         proxy: {
           enableProxy: false,
           proxySetting: {
-            host: '127.0.0.1',
-            port: 9000,
+            host: '139.59.3.255',
+            port: 7777,
             auth: {
               username: 'mikeymike',
               password: 'rapunz3l',
@@ -141,8 +141,8 @@ config.controller = {
         proxy: {
           enableProxy: false,
           proxySetting: {
-            host: '127.0.0.1',
-            port: 9000,
+            host: '139.59.3.255',
+            port: 7777,
             auth: {
               username: 'mikeymike',
               password: 'rapunz3l',

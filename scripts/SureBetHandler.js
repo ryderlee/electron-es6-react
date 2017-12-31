@@ -65,40 +65,37 @@ class RedissureBetHandler {
     return Promise.resolve(true);
 
   }
-  findOddsBetsByOddsArr(leftHandOddsObjArr, rightHandOddsObjArr) {
+
+  findBetByOddsObj(leftHandOddsObj, rightHandOddsObj) {
+
     const cutOffDatetime = moment().subtract(60, 'seconds').utc();
+    // this.findOddsBetsByOddsObj(leftHandOddsObj, rightHandOddsObj);
+    const leftHandOdds = (parseFloat(leftHandOddsObj.odds) > 2.0) ? (-1 / (parseFloat(leftHandOddsObj.odds) - 1)) : parseFloat(leftHandOddsObj.odds) - 1;
+    const rightHandOdds = (parseFloat(rightHandOddsObj.odds) > 2.0) ? (-1 / (parseFloat(rightHandOddsObj.odds) - 1)) : parseFloat(rightHandOddsObj.odds) - 1;
+    if ((leftHandOdds + rightHandOdds > 2) || ((leftHandOdds + rightHandOdds) > 0 && (leftHandOdds < 0 || rightHandOdds < 0)) 
+      && cutOffDatetime.isBefore(moment(leftHandOddsObj.lastPingDatetime)) && cutOffDatetime.isBefore(moment(rightHandOddsObj.lastPingDatetime))) {
+      console.log('!!!!odds found@%s: %s %s %s %s, %s %s %s %s, %s', moment().utc().format(), leftHandOddsObj.id, leftHandOddsObj.odds, leftHandOdds, leftHandOddsObj.lastPingDatetime, rightHandOddsObj.id, rightHandOddsObj.odds, rightHandOdds, rightHandOddsObj.lastPingDatetime, parseFloat(leftHandOdds) + parseFloat(rightHandOdds));
+    } else {
+      if ((leftHandOdds + rightHandOdds > 2) || ((leftHandOdds + rightHandOdds) > 0 && (leftHandOdds < 0 || rightHandOdds < 0))) {
+        console.log('old odds found@%s: %s %s %s %s, %s %s %s %s, %s', moment().utc().format(), leftHandOddsObj.id, leftHandOddsObj.odds, leftHandOdds, leftHandOddsObj.lastPingDatetime, rightHandOddsObj.id, rightHandOddsObj.odds, rightHandOdds, rightHandOddsObj.lastPingDatetime, parseFloat(leftHandOdds) + parseFloat(rightHandOdds));
+      }
+    }
+    /*
+            if (((1 / parseFloat(leftHandOddsObj.odds)) + (1 / parseFloat(rightHandOddsObj.odds))) < 1) {
+              console.log('odds found: %s %s, %s %s, %s', leftHandOddsObj.id, leftHandOddsObj.odds,
+                rightHandOddsObj.id, rightHandOddsObj.odds,
+                ((1 / parseFloat(leftHandOddsObj.odds)) + (1 / parseFloat(rightHandOddsObj.odds))));
+            }
+            */
+  }
+
+  findBetsByOddsArr(leftHandOddsObjArr, rightHandOddsObjArr) {
     _.each(leftHandOddsObjArr, (leftHandOddsObj) => {
       const rightHandOddsHomeOrAway = (leftHandOddsObj.homeOrAway === '0' ? '1' : '0');
       const rightHandOddsObjFilterResult = _.filter(rightHandOddsObjArr, { homeOrAway: rightHandOddsHomeOrAway });
       if (rightHandOddsObjFilterResult.length > 0) {
         const rightHandOddsObj = rightHandOddsObjFilterResult[0];
-        // this.findOddsBetsByOddsObj(leftHandOddsObj, rightHandOddsObj);
-        const leftHandOdds = (parseFloat(leftHandOddsObj.odds) > 2.0) ? (-1 / (parseFloat(leftHandOddsObj.odds) - 1)) : parseFloat(leftHandOddsObj.odds) - 1;
-        const rightHandOdds = (parseFloat(rightHandOddsObj.odds) > 2.0) ? (-1 / (parseFloat(rightHandOddsObj.odds) - 1)) : parseFloat(rightHandOddsObj.odds) - 1;
-        if ((leftHandOdds + rightHandOdds > 2) 
-          || ((leftHandOdds + rightHandOdds) > 0 && (leftHandOdds < 0 || rightHandOdds < 0))
-        ) {
-          console.log('old odds found@%s: %s %s %s %s, %s %s %s %s, %s', moment().utc().format(), leftHandOddsObj.id, leftHandOddsObj.odds, leftHandOdds, leftHandOddsObj.lastPingDatetime,
-            rightHandOddsObj.id, rightHandOddsObj.odds, rightHandOdds, rightHandOddsObj.lastPingDatetime,
-            parseFloat(leftHandOdds) + parseFloat(rightHandOdds));
-
-        }
-        if ((leftHandOdds + rightHandOdds > 2) || ((leftHandOdds + rightHandOdds) > 0 && (leftHandOdds < 0 || rightHandOdds < 0))
-          && cutOffDatetime.isBefore(moment(leftHandOddsObj.lastPingDatetime))
-          && cutOffDatetime.isBefore(moment(rightHandOddsObj.lastPingDatetime))
-        ) {
-          console.log('!!!!odds found@%s: %s %s %s %s, %s %s %s %s, %s', moment().utc().format(), leftHandOddsObj.id, leftHandOddsObj.odds, leftHandOdds, leftHandOddsObj.lastPingDatetime,
-            rightHandOddsObj.id, rightHandOddsObj.odds, rightHandOdds, rightHandOddsObj.lastPingDatetime,
-            parseFloat(leftHandOdds) + parseFloat(rightHandOdds));
-
-        }
-        /*
-        if (((1 / parseFloat(leftHandOddsObj.odds)) + (1 / parseFloat(rightHandOddsObj.odds))) < 1) {
-          console.log('odds found: %s %s, %s %s, %s', leftHandOddsObj.id, leftHandOddsObj.odds,
-            rightHandOddsObj.id, rightHandOddsObj.odds,
-            ((1 / parseFloat(leftHandOddsObj.odds)) + (1 / parseFloat(rightHandOddsObj.odds))));
-        }
-        */
+        this.findBetByOddsObj(leftHandOddsObj, rightHandOddsObj);
       }
     });
   }
@@ -114,7 +111,7 @@ class RedissureBetHandler {
           for (let y = i + 1; y < _.size(eventArrByGame); y += 1) {
             const rightHandProviderCode = _.keys(eventArrByGame)[y];
             const rightHandOddsObjArr = eventArrByGame[rightHandProviderCode];
-            this.findOddsBetsByOddsArr(leftHandOddsObjArr, rightHandOddsObjArr);
+            this.findBetsByOddsArr(leftHandOddsObjArr, rightHandOddsObjArr);
           }
         }
       });
@@ -129,8 +126,24 @@ class RedissureBetHandler {
       const eventGroupLinkObj = await this.DBHandler.loadObj(eventGroupLinkId);
       // console.log('sureBet->incoming2:', eventGroupLinkObj.groupKey);
       if (!_.isNil(eventGroupLinkObj) && !_.isUndefined(eventGroupLinkObj)) {
-        const oddsArr = await this.DBHandler.getEventsOddsForSureBet(eventGroupLinkObj.groupKey);
-        const oddsObj = await this.DBHandler.loadObj(md.content);
+        const sureBetOddsArr= await this.DBHandler.getEventsOddsForSureBet(eventGroupLinkObj.groupKey);
+        const leftHandOddsObj = await this.DBHandler.loadObj(md.content);
+        // console.log(md.content);
+        // console.log(sureBetOddsArr);
+        if(_.has(sureBetOddsArr, leftHandOddsObj.gameTypeStr)) {
+          const gameTypeOddsArr = sureBetOddsArr[leftHandOddsObj.gameTypeStr];
+          delete gameTypeOddsArr[leftHandOddsObj.providerCode];
+          const rightHandOddsHomeOrAway = (leftHandOddsObj.homeOrAway === '0' ? '1' : '0');
+          _.each(gameTypeOddsArr, (rightHandOddsObjArr, providerCode) => {
+            const rightHandOddsObjFilterResult = _.filter(rightHandOddsObjArr, { homeOrAway: rightHandOddsHomeOrAway });
+            if (rightHandOddsObjFilterResult.length > 0) {
+              const rightHandOddsObj = rightHandOddsObjFilterResult[0];
+              // console.log(leftHandOddsObj.id, rightHandOddsObj.id);
+              this.findBetByOddsObj(leftHandOddsObj, rightHandOddsObj);
+            } 
+          });
+        }
+        /*
         _.each(oddsArr, (oddsPair, key) => {
           if(key === oddsObj.gameTypeStr) {
             const tempOddsPair = _.cloneDeep(oddsPair);
@@ -139,10 +152,11 @@ class RedissureBetHandler {
             for (let i = 0; i < _.size(tempOddsPair); i += 1) {
               const rightHandProviderCode = _.keys(tempOddsPair)[i];
               const rightHandOddsObjArr = tempOddsPair[rightHandProviderCode];
-              this.findOddsBetsByOddsArr(leftHandOddsObjArr, rightHandOddsObjArr);
+              this.findBetsByOddsArr(leftHandOddsObjArr, rightHandOddsObjArr);
             }
           }
         });
+        */
       } else {
         // console.log('not under monitor:', md.content);
       }
