@@ -1,7 +1,10 @@
-const connectionBase = require('./connectionBase'); const _ = require('lodash');
+const connectionBase = require('./connectionBase'); 
+const _ = require('lodash');
 // const rp = require('request-promise')
 let numeral = require('numeral');
 const moment = require('moment');
+const sleep = require('sleep-promise');
+const qs = require('querystring');
 // const ReactDataGridPlugins = require('react-data-grid/addons')
 
 class isn extends connectionBase {
@@ -17,6 +20,7 @@ class isn extends connectionBase {
     this.updateAPIKeyTimeout = null;
     this.resetTimeout = null;
     this.refreshTimeout = null;
+    this.loginTimeout = null;
     this.providerCode = 'isn';
     this.gameIdToGameType = {};
     this.eventIdToLeagueCode = {};
@@ -30,6 +34,7 @@ class isn extends connectionBase {
     this.isLogInReady = false;
     this.isAPIKeyReady = false;
     this.isMemberInfoReady = false;
+    this.isAvailableForBetting = false;
 
     this.hasLive = false;
 
@@ -37,7 +42,7 @@ class isn extends connectionBase {
       responseType: 'json', // Automatically parses the JSON string in the response
     };
   }
-  start() {
+  async start() {
     console.log('isn->start');
     return this.reset();
   }
@@ -92,12 +97,14 @@ class isn extends connectionBase {
           let leagueCode = '';
           let gameTypeStr = '';
           if (eventScheduleId === 3) this.hasLive = false; // to reset the hasLive flag
+          const toInternalEventScheduleIdArr = {1:'2', 2:'1', 3:'0'};
           _.each(response.data, (league) => {
             leagueCode = `${this.providerCode}-${league.leagueName}`;
             this.DBHandler.delaySetLeague(this.providerCode, leagueCode, league.leagueName);
             _.each(league.events, (event) => {
-              const isLive = eventScheduleId === 3 ? 1 : 0;
-              if (isLive === 1 && !this.hasLive) {
+              
+              const isLive = String(toInternalEventScheduleIdArr[eventScheduleId]);
+              if (eventScheduleId === 3 && !this.hasLive) {
                 this.hasLive = true;
               }
 
@@ -246,7 +253,6 @@ class isn extends connectionBase {
     clearTimeout(this.updateEventListTimeout);
     if (this.isLoggedIn && this.isAPIKeyReady && this.isMemberInfoReady) {
       try {
-        console.log(this.config.market);
         if (this.config.market.live === true) {
           await this.callAPIGetEventList(3);
           await this.callAPIGetEventPrice(3);
@@ -326,8 +332,46 @@ class isn extends connectionBase {
       return false;
     }
   }
+  async login() {
+    if (!this.isBetting) {
+      this.isLoggedIn = false;
+      this.isMemberInfoReady = false;
+      this.isAPIKeyReady = false;
+      try {
+        const response1 = await this.axios('http://www.apiisn.com/betting/api/member/login', _.extend({}, this.loginOptions ));
+        console.log(`User login success: ${response1.data.userId}`);
+        this.apiKeyOptions.headers.userId = response1.data.userId;
+        this.apiKeyOptions.headers.memberToken = response1.data.memberToken;
+        this.apiOptions.headers.userId = response1.data.userId;
+        this.apiOptions.headers.memberToken = response1.data.memberToken;
+        this.memberInfoOptions.lastRequestKey = response1.data.lastRequestKey;
+        this.isLoggedIn = true;
+        this.isAPIKeyReady = false;
+        this.isMemberInfoReady = false;
+        console.log('callAPIGetAPIKey');
+        // rp(_.extend({}, this.apiKeyOptions, {url: 'http://www.apiisn.com/betting/api/member/apikey'})).promise().bind(this).then(function (response) {
+        const apiResponse = await this.axios('http://www.apiisn.com/betting/api/member/apikey', _.extend({}, this.apiKeyOptions));
+        this.apiOptions.headers.apiKey = apiResponse.data.apiKey;
+        this.isAPIKeyReady = true;
 
-  reset() {
+        const apiKeyResponse = await this.axios('http://www.apiisn.com/betting/api/member/info', _.extend({}, this.apiOptions));
+        this.memberInfoOptions.binaryOddsFormat = apiKeyResponse.data.binaryOddsFormat;
+        this.memberInfoOptions.oddsGroupId = apiKeyResponse.data.oddsGroupId;
+        this.isMemberInfoReady = true;
+        this.isAvailableForBetting = true;
+      } catch (error) {
+        this.isLoggedIn = false;
+        this.isAPIKeyReady = false;
+        this.isMemberInfoReady = false;
+        this.isAvailableForBetting = true;
+      }
+    } else {
+      console.log('is betting, can"t login yet');
+    }
+  }
+
+
+  async reset() {
     console.log('isn->reset');
     this.isLoggedIn = false;
     this.isAPIKeyReady = false;
@@ -338,7 +382,7 @@ class isn extends connectionBase {
     clearTimeout(this.refreshTimeout);
     clearTimeout(this.resetTimeout);
     // rp(_.extend({}, this.loginOptions, {url: 'http://www.apiisn.com/betting/api/member/login'})).then((response) => {
-    return this.axios('http://www.apiisn.com/betting/api/member/login', _.extend({}, this.loginOptions ))
+    return this.axios('http://www.apiisn.com/betting/api/member/login', _.extend({}, this.loginOptions))
       .then((response) => {
         console.log('User login success: %s ', response.data.userId);
         this.apiKeyOptions.headers.userId = response.data.userId;
@@ -355,6 +399,70 @@ class isn extends connectionBase {
         // setTimeout(_.bind(this.reset, this), this.config.errorReconnectDuration)
         console.error(err);
       });
+  }
+
+  async prepareBet(oddsObj) {
+    await this.refreshBetting(true);
+    console.log(oddsObj);
+    const betDetailResponse = await this.axios(`http://www.apiisn.com/betting/api/bet/betlimit/${oddsObj.rawJson.marketSelectionId}`, _.extend({}, this.apiOptions));
+    const returnValue = {};
+    returnValue.providerCode = this.providerCode;
+    returnValue.providerKey = this.providerKey;
+    returnValue.minBet = betDetailResponse.data.minBet;
+    returnValue.maxBet = betDetailResponse.data.maxBet;
+    returnValue.isReadyToBet = (this.isLoggedIn && this.isAPIKeyReady && this.isMemberInfoReady);
+    return returnValue;
+  }
+
+  async placeBet(oddsObj, bet) {
+    console.log('placeBet', oddsObj);
+    const param = { selectionId: oddsObj.rawJson.marketSelectionId, stake: bet, odds: oddsObj.odds, handicap: oddsObj.rawJson.handicap, nativeOdds: oddsObj.rawJson.nativeOdds };
+    const prepareBetResponse = await this.axios.post('http://www.apiisn.com/betting/api/bet/preparebet', qs.stringify(param), _.extend({}, this.apiOptions));
+    console.log('placeBet!!', prepareBetResponse.data);
+    if (_.has(prepareBetResponse.data, 'respMessage')) {
+      //bet responded
+      if (_.has(prepareBetResponse.data, 'respCode') && prepareBetResponse.data.respCode === 'MT001') {
+        console.log('bet success');
+        return true;
+      }
+      throw Error(prepareBetResponse.data);
+    } else {
+      //prepare bet
+      console.log('isn->placeBet->confirmBet');
+      await sleep(Number(prepareBetResponse.data.otherSportsLiveBetDelay));
+      const confirmBetParam = { preparedBetId: prepareBetResponse.data.preparedBetId };
+      const confirmBetResponse = await this.axios.post('http://www.apiisn.com/betting/api/bet/confirmbet', confirmBetParam, _.extend({}, this.apiOptions));
+      if (_.has(confirmBetResponse.data, 'respMessage')) {
+        //bet responded
+        if (_.has(confirmBetResponse, 'respCode') && confirmBetResponse.respCode === 'MT001') {
+          console.log('bet success');
+          return true;
+        }
+        throw Error(confirmBetResponse.data);
+      }
+    }
+  }
+  async refreshBetting() {
+    const setSchedule = true;
+    this.loginTimeout = null;
+    if (!this.isBetting) {
+      await this.login();
+    } else if (setSchedule) {
+      if (setSchedule) this.loginTimeout = _.delay(() => this.refreshBetting(), 200);
+    }
+    if (setSchedule) this.loginTimeout = _.delay(() => this.refreshBetting(), 10000);
+    return true;
+  }
+
+  async getReadyForBetting() {
+    await this.refreshBetting(true);
+  }
+
+  init(forBetting = false) {
+    super.init();
+    if (forBetting) {
+      console.log('isn->for Betting');
+    }
   }
 
 

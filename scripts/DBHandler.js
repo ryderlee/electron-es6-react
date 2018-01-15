@@ -401,7 +401,7 @@ class InfoHandler {
       pipe.sadd(key, list.id);
       pipe.publish(`setUpdate_${setType}`, `set ${key}`);
     }); 
-    console.log('addItemsToSets #s: %d', isDiff);
+    console.log('addItemsToSets #: %d', isDiff);
     return pipe.exec();
   }
   async setObjects(objType, inputObjArr) {
@@ -415,7 +415,11 @@ class InfoHandler {
       let DBResult = {};
       _.each(DBTmpResult, (tmpObj) => {
         if (!_.isNull(tmpObj[1]) && !_.isUndefined(tmpObj[1]) && !_.isEmpty(tmpObj[1])) {
-          DBResult[tmpObj[1].id] = _.omit(tmpObj[1], ['rawJson', 'searchId', 'lastPingDatetime', 'lastUpdateDatetime', 'createDatetime']);
+          DBResult[tmpObj[1].id] = _.omit(tmpObj[1], ['rawJson', 'rawJsonStr', 'searchId', 'lastPingDatetime', 'lastUpdateDatetime', 'createDatetime']);
+          if (_.has(tmpObj[1], 'rawJsonStr')) {
+            DBResult[tmpObj[1].id].rawJson = JSON.parse(tmpObj[1].rawJsonStr);
+            delete tmpObj[1].rawJsonStr;
+          }
         }
       });
       // console.log(_.keys(result));
@@ -426,6 +430,15 @@ class InfoHandler {
       let isDuplicate = 0;
       _.each(objArr, (inputObj) => {
         const objToWrite = _.omit(inputObj, ['rawJson', 'searchId', 'lastUpdateDatetime', 'lastPingDatetime', 'createDatetime']);
+        let hasRawJson = false;
+        let isRawJsonEmpty = true;
+        if (_.has(inputObj, 'rawJson')) {
+          hasRawJson = true;
+          if (!_.isNil(inputObj.rawJson) && !_.isEmpty(inputObj.rawJson) && !_.isUndefined(inputObj.rawJson)) {
+            isRawJsonEmpty = false;
+            objToWrite.rawJson = inputObj.rawJson;
+          }
+        }
         const objToCompare = {};
         _.each(_.keys(objToWrite), (key) => {
           objToCompare[key] = String(inputObj[key]);
@@ -437,6 +450,14 @@ class InfoHandler {
         if (!isExist || !isEqual) {
           // console.log('diff here, %s, %s', _.has(DBResult, objKey), _.isEqual(DBResult[objKey], objToCompare));
           isDiff += 1;
+          if (hasRawJson) {
+            if (!isRawJsonEmpty) {
+              // console.log('rawJson21:', objToWrite.rawJson);
+              const jsonStr = JSON.stringify(objToWrite.rawJson);
+              objToWrite.rawJsonStr = jsonStr;
+            }
+            delete objToWrite.rawJson;
+          }
           dbChain.hmset(objKey, objToWrite);
           if (_.has(inputObj, 'searchId')) {
             dbChain.set(inputObj.searchId, objToWrite.id);
@@ -453,7 +474,7 @@ class InfoHandler {
           isDuplicate += 1;
         }
       });
-      console.log('setObjects #:%d, %d', isDiff, isDuplicate);
+      console.log('setObjects %s #:%d, %d', objType, isDiff, isDuplicate);
       return dbChain.exec();
       // return Promise.resolve();
     });
@@ -603,10 +624,7 @@ class InfoHandler {
     return Promise.resolve(true);
   }
 
-  delaySetEvent(providerCode, leagueCode, eventCode, homeTeamCode, homeTeamName, awayTeamCode, awayTeamName, eventStatus, eventDatetime, eventIsLive = null) {
-    let isLive = null;
-    if (_.isNull(eventIsLive)) isLive = -1;
-    else isLive = (eventIsLive ? 1 : 0);
+  delaySetEvent(providerCode, leagueCode, eventCode, homeTeamCode, homeTeamName, awayTeamCode, awayTeamName, eventStatus, eventDatetime, eventMarketId) {
     this.eventBuff.push({
       id: `obj:e#p:${providerCode}#l:${querystring.escape(leagueCode)}#e:${querystring.escape(eventCode)}`,
       searchId: `eid#p:${providerCode}#e:${eventCode}`,
@@ -621,17 +639,17 @@ class InfoHandler {
       awayTeamName: String(awayTeamName),
       eventStatus: String(eventStatus),
       eventDatetime: moment(eventDatetime).utc().format(),
-      eventIsLive: String(isLive),
+      eventMarketId: String(eventMarketId),
     });
     return Promise.resolve(true);
   }
-  setEvent(providerCode, leagueCode, eventCode, homeTeam, awayTeam, eventStatus, eventDatetime, eventIsLive = null) {
-    return this.delaySetEvent(providerCode, leagueCode, eventCode, homeTeam, awayTeam, eventStatus, eventDatetime, eventIsLive)
+  setEvent(providerCode, leagueCode, eventCode, homeTeam, awayTeam, eventStatus, eventDatetime, eventMarketId) {
+    return this.delaySetEvent(providerCode, leagueCode, eventCode, homeTeam, awayTeam, eventStatus, eventDatetime, eventMarketId)
       .then(this.flushEvent())
       .then(Promise.resolve(true));
   }
 
-  async getEventByEventId (providerCode, eventId) {
+  async getEventByEventId(providerCode, eventId) {
     const key = await this.redis.get(`eid#p:${providerCode}#e:${querystring.escape(eventId)}`);
     const returnValue = await this.redis.hmget(key);
     return returnValue;
@@ -663,9 +681,9 @@ class InfoHandler {
       .then(Promise.resolve(true));
   }
 
-  setOdds(providerCode, leagueCode, eventCode, gameCode, gameTypeStr, oddCode, homeOrAway, odds, cutOffTimestamp, rawJson) {
-    // console.log('setOdd - providerCode:%s, eventId:%s, gameTypeStr:%s, oddCode:%s, optionNum:%s, odds:%s, cutOffTimestamp:%s', providerCode, eventId, gameTypeStr, oddCode, optionNum, odds, cutOffTimestamp )
-    return this.delaySetOdds(providerCode, leagueCode, eventCode, gameCode, gameTypeStr, oddCode, homeOrAway, odds, cutOffTimestamp, rawJson)
+  setOdds(providerCode, leagueCode, eventCode, gameCode, gameTypeStr, oddsCode, homeOrAway, odds, cutOffTimestamp, rawJson = null) {
+    // console.log('setOdd - providerCode:%s, eventId:%s, gameTypeStr:%s, oddsCode:%s, optionNum:%s, odds:%s, cutOffTimestamp:%s', providerCode, eventId, gameTypeStr, oddsCode, optionNum, odds, cutOffTimestamp )
+    return this.delaySetOdds(providerCode, leagueCode, eventCode, gameCode, gameTypeStr, oddsCode, homeOrAway, odds, cutOffTimestamp, rawJson)
       .then(this.flushOdds())
       .then(Promise.resolve(true));
   }
@@ -678,16 +696,16 @@ class InfoHandler {
       })
   }
 
-  delaySetOdds(providerCode, leagueCode, eventCode, gameCode, gameTypeStr, oddCode, homeOrAway, odds, cutOffTimestamp, rawJson) {
+  delaySetOdds(providerCode, leagueCode, eventCode, gameCode, gameTypeStr, oddsCode, homeOrAway, odds, cutOffTimestamp, rawJson = null) {
     this.oddsBuff.push({
-      id: `obj:o#p:${providerCode}#l:${querystring.escape(leagueCode)}#e:${querystring.escape(eventCode)}#gt:${gameTypeStr}#o:${oddCode}`,
+      id: `obj:o#p:${providerCode}#l:${querystring.escape(leagueCode)}#e:${querystring.escape(eventCode)}#gt:${gameTypeStr}#o:${oddsCode}`,
       objType: 'o',
       providerCode: String(providerCode),
       leagueCode: String(leagueCode),
       eventCode: String(eventCode),
       gameCode: String(gameCode),
       gameTypeStr: String(gameTypeStr),
-      oddCode: String(oddCode),
+      oddsCode: String(oddsCode),
       homeOrAway: String(homeOrAway),
       odds: Number(odds),
       cutOffTimestamp: cutOffTimestamp,
@@ -696,9 +714,11 @@ class InfoHandler {
     return Promise.resolve(true);
   }
 
+
+
   async loadObj(key) {
     const result = await this.redis.hgetall(key);
-    if (!_.isNil(result) && !_.isUndefined(result) && !_.isEmpty(result)) return result;
+    if (!_.isNil(result) && !_.isUndefined(result) && !_.isEmpty(result)) return this.assignRawJson(result);
     return null;
   }
   loadList(key) {
@@ -718,12 +738,11 @@ class InfoHandler {
     const key = `obj:egl#p:${eventObj.providerCode}#l:${querystring.escape(eventObj.leagueCode)}#e:${eventObj.eventCode}`;
     return await this.loadObj(key);
   }
-
   extractProviderCode(key) {
     const keyArr = key.split('#');
     return keyArr[1].replace('p:', '');
   }
-  toEventId(key){
+  getEventId(key){
     const keyArr = key.split('#');
     return `obj:e#${keyArr.slice(1, 4).join('#')}`;
   }
@@ -819,10 +838,17 @@ class InfoHandler {
     const objArrResult = await pipe2.exec();
     _.each(objArrResult, (objResult) => {
       if (!_.isNil(objResult[1]) && !_.isEmpty(objResult[1])) {
-        returnValue.push(objResult[1]);
+        returnValue.push(this.assignRawJson(objResult[1]));
       }
     });
     return returnValue;
+  }
+  assignRawJson(result) {
+    if (_.has(result, 'rawJsonStr')) {
+      result.rawJson = JSON.parse(result.rawJsonStr);
+      delete result.rawJsonStr;
+    }
+    return result;
   }
   async getEventsOddsForSureBet(eventGroupId) {
     const pipe = this.redis.pipeline();
@@ -858,6 +884,50 @@ class InfoHandler {
       console.error('something wrong. gameTypeStr:%s period:%s team:%s gameType:%s gameTypeDetail:%s', gameTypeStr, period, team, gameType, gameTypeDetail);
     }
     return gameTypeStr;
+  }
+
+  getEventIdByOddsId(oddsId) {
+    return this.getEventId(oddsId);
+  }
+
+  async popBet(providerComboStr, withscore = true) {
+    let result = null;
+    const betObj = {};
+    const pipe = new Redis();
+    await pipe.watch(`sortedSet_bets_${providerComboStr}`);
+    if (withscore) {
+      result = await pipe.zrevrange(`sortedSet_bets_${providerComboStr}`, 0, 0, 'withscores');
+    } else {
+      result = await pipe.zrevrange(`sortedSet_bets_${providerComboStr}`, 0, 0);
+    }
+    await pipe.multi().zrem(`sortedSet_bets_${providerComboStr}`, result[0]).exec();
+    if (result.length > 0 && !_.isNil(result[0]) && !_.isUndefined(result[0])) {
+      betObj.score = result[1];
+      const leftHandOddsId = result[0].split('|')[0];
+      const rightHandOddsId = result[0].split('|')[1];
+      const oddsObj = await Promise.all([this.loadObj(leftHandOddsId), this.loadObj(rightHandOddsId)]);
+      betObj.oddsObjArr = oddsObj;
+      return betObj;
+    }
+    return null;
+  }
+
+  decodeGameType(gameTypeStr) {
+    const returnValue = {};
+    returnValue.period = _.findKey(this.gamePeriodMap, (o) => {return o === gameTypeStr.slice(0, 1)});
+    returnValue.gameTeam = _.findKey(this.gameTeamMap, (o) => {return o === gameTypeStr.slice(1, 2)});
+    returnValue.gameType = gameTypeStr.slice(2, 3) === '1' ? 'handicap' : 'ou';
+    returnValue.gameTypeDetail = _.findKey(this.gameTypeMap[returnValue.gameType], (o) => {return o === gameTypeStr.slice(2)});
+    return returnValue;
+  }
+
+  async pushBet(providerComboStr, score, leftOddsObj, rightOddsObj) {
+    return this.redis.zadd(`sortedSet_bets_${providerComboStr}`, score,
+      `${leftOddsObj.id}|${rightOddsObj.id}`);
+  }
+
+  async countBet(providerComboStr) {
+    return this.redis.zcard(`sortedSet_bets_${providerComboStr}`);
   }
 }
 

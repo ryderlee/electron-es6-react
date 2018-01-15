@@ -9,14 +9,17 @@ class connectionBase {
     this.providerKey = null;
     this.config = null;
     this.axios = null;
+    this.isAvailableForBetting = false;
+    this.isBetting = false;
   }
   getNewConnection() {
     if (this.config.proxy.enableProxy) {
       this.axios = axios.create({
         proxy: this.config.proxy.proxySetting,
+        timeout: 3000,
       });
     } else {
-      this.axios = axios.create();
+      this.axios = axios.create({ timeout: 3000 });
     }
   }
   init() {

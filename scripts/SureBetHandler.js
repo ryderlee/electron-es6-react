@@ -16,7 +16,7 @@ const axios = require('axios');
 
 // const shremote = requireTaskPool(global.require.resolve('./StrategyHandlerRemote'))
 
-class RedissureBetHandler {
+class RedisSureBetHandler {
   constructor() {
     this.config = {};
     this.monitorConn = null;
@@ -30,8 +30,9 @@ class RedissureBetHandler {
       keyFilename: '../key/wavymap-sports.json',
     });
   }
-
-
+  setDBHandler(ph) {
+    this.DBHandler = ph;
+  }
   isReady(){
     return true;
   }
@@ -66,19 +67,26 @@ class RedissureBetHandler {
 
   }
 
+  proceedOdds(leftHandOddsObj, leftHandOdds, rightHandOddsObj, rightHandOdds) {
+    const cutOffDatetime = moment().subtract(60, 'seconds').utc();
+    const rounding = 100;
+    const isNewOdds = cutOffDatetime.isBefore(moment(leftHandOddsObj.lastPingDatetime)) && cutOffDatetime.isBefore(moment(rightHandOddsObj.lastPingDatetime)) ;
+    console.log('%s odds found@%s: %s|%s %s & %s -> %s & %s %s %s Profit:%s', isNewOdds?'new':'old', moment().utc().format(),
+      leftHandOddsObj.id, rightHandOddsObj.id, 
+      leftHandOddsObj.odds, rightHandOddsObj.odds,
+      Math.round(leftHandOdds * rounding) / rounding, Math.floor(rightHandOdds * rounding) / rounding,
+      leftHandOddsObj.lastPingDatetime, rightHandOddsObj.lastPingDatetime,
+      Math.floor((parseFloat(leftHandOdds) + parseFloat(rightHandOdds)) * rounding) / rounding
+    );
+  }
+
   findBetByOddsObj(leftHandOddsObj, rightHandOddsObj) {
 
-    const cutOffDatetime = moment().subtract(60, 'seconds').utc();
     // this.findOddsBetsByOddsObj(leftHandOddsObj, rightHandOddsObj);
-    const leftHandOdds = (parseFloat(leftHandOddsObj.odds) > 2.0) ? (-1 / (parseFloat(leftHandOddsObj.odds) - 1)) : parseFloat(leftHandOddsObj.odds) - 1;
-    const rightHandOdds = (parseFloat(rightHandOddsObj.odds) > 2.0) ? (-1 / (parseFloat(rightHandOddsObj.odds) - 1)) : parseFloat(rightHandOddsObj.odds) - 1;
-    if ((leftHandOdds + rightHandOdds > 2) || ((leftHandOdds + rightHandOdds) > 0 && (leftHandOdds < 0 || rightHandOdds < 0)) 
-      && cutOffDatetime.isBefore(moment(leftHandOddsObj.lastPingDatetime)) && cutOffDatetime.isBefore(moment(rightHandOddsObj.lastPingDatetime))) {
-      console.log('!!!!odds found@%s: %s %s %s %s, %s %s %s %s, %s', moment().utc().format(), leftHandOddsObj.id, leftHandOddsObj.odds, leftHandOdds, leftHandOddsObj.lastPingDatetime, rightHandOddsObj.id, rightHandOddsObj.odds, rightHandOdds, rightHandOddsObj.lastPingDatetime, parseFloat(leftHandOdds) + parseFloat(rightHandOdds));
-    } else {
-      if ((leftHandOdds + rightHandOdds > 2) || ((leftHandOdds + rightHandOdds) > 0 && (leftHandOdds < 0 || rightHandOdds < 0))) {
-        console.log('old odds found@%s: %s %s %s %s, %s %s %s %s, %s', moment().utc().format(), leftHandOddsObj.id, leftHandOddsObj.odds, leftHandOdds, leftHandOddsObj.lastPingDatetime, rightHandOddsObj.id, rightHandOddsObj.odds, rightHandOdds, rightHandOddsObj.lastPingDatetime, parseFloat(leftHandOdds) + parseFloat(rightHandOdds));
-      }
+    const leftHandOdds = (parseFloat(leftHandOddsObj.odds) > 2.0) ? (-1 / (parseFloat(leftHandOddsObj.odds) - 1.00)) : parseFloat(leftHandOddsObj.odds) - 1.00;
+    const rightHandOdds = (parseFloat(rightHandOddsObj.odds) > 2.0) ? (-1 / (parseFloat(rightHandOddsObj.odds) - 1.00)) : parseFloat(rightHandOddsObj.odds) - 1.00;
+    if ((leftHandOdds + rightHandOdds > 2) || ((leftHandOdds + rightHandOdds) >= 0 && (leftHandOdds < 0 || rightHandOdds < 0))) {
+      this.proceedOdds(leftHandOddsObj, leftHandOdds, rightHandOddsObj, rightHandOdds);
     }
     /*
             if (((1 / parseFloat(leftHandOddsObj.odds)) + (1 / parseFloat(rightHandOddsObj.odds))) < 1) {
@@ -121,7 +129,7 @@ class RedissureBetHandler {
     const md = this.DBHandler.consumeMessage(message);
     if (md.command === 'set') {
       // console.log('sureBet->incoming:', md.content);
-      const eventGroupLinkId = this.DBHandler.eventIdToEventGroupLinkId(this.DBHandler.toEventId(md.content));
+      const eventGroupLinkId = this.DBHandler.eventIdToEventGroupLinkId(this.DBHandler.getEventId(md.content));
       // console.log('sureBet->incoming1:', eventGroupLinkId);
       const eventGroupLinkObj = await this.DBHandler.loadObj(eventGroupLinkId);
       // console.log('sureBet->incoming2:', eventGroupLinkObj.groupKey);
@@ -192,4 +200,4 @@ class RedissureBetHandler {
     return this.monitor();
   }
 }
-module.exports = RedissureBetHandler;
+module.exports = RedisSureBetHandler;

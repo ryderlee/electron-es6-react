@@ -38,6 +38,8 @@ class sbo extends connectionBase {
     this.isEventPriceFirstCallCompleted = false;
     this.leagueQueue = {};
 
+    this.isBetting = false;
+    this.isAvailableForBetting = false;
 
     this.gameTypeRegex = /.+? (-?\d*\.{0,1}\d+) @/g;
 
@@ -55,7 +57,15 @@ class sbo extends connectionBase {
     this.marketIdPage['live'] = 3;
     this.marketIdPage['early'] = 2;
 
+    this.oIdCache = {};
     this.defaultOptions = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.113 Safari/537.36' };
+
+    this.eventRegex = {
+      HDPRegex: { period: 0, gameType: 'handicap', pattern: /Handicap[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>/g },
+      OURegex: { period: 0, gameType: 'ou', pattern: /Over\/Under[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>/g },
+      firstHalfHDPRegex: { period: 1, gameType: 'handicap', pattern: /First Half Hdp[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>/g },
+      firstHalfOURegex: { period: 1, gameType: 'ou', pattern: /First Half O\/U[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>/g },
+    };
   }
     // this.browser = new Nightmare({show: true}).useragent("Mozilla/5.0 (iPhone; CPU iPhone OS 8_0 like Mac OS X) AppleWebKit/537.51.1 (KHTML, like Gecko) Version/8.0 Mobile/11A465 Safari/9537.53")
     // this.browser = new Horseman().userAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 8_0 like Mac OS X) AppleWebKit/537.51.1 (KHTML, like Gecko) Version/8.0 Mobile/11A465 Safari/9537.53")
@@ -189,26 +199,17 @@ class sbo extends connectionBase {
     }
     return Promise.resolve(this);
   }
-
-  async crawlAndMatch(url, patternRegex, isGoingBack = false, isGame = false, debugInfo = null) {
-    const response = await this.myCrawl(url);
-    if (response.data.indexOf('<title>ERROR</title>') > -1) {
-      return Promise.reject('title error ' + url + ' ' + (response.data.indexOf('Multiple login') > -1 ? 'multiLogin' : 'sessionTimeout'));
-    }
+  async myMatch(data, patternRegex, isGoingBack, isGame, debugInfo) {
     if (!isGame) {
       // console.log(response.data);
-      return Promise.resolve(this.regexMatch(response.data, patternRegex));
+      return Promise.resolve(this.regexMatch(data, patternRegex));
     }
-    console.log(url);
-    const HDPRegex ={ period:0, gameType:'handicap', pattern: /Handicap[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>/g };
-    const OURegex = { period:0, gameType:'ou', pattern: /Over\/Under[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>/g };
-    const firstHalfHDPRegex = { period:1, gameType:'handicap', pattern: /First Half Hdp[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>/g };
-    const firstHalfOURegex = { period:1, gameType:'ou', pattern: /First Half O\/U[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>[\s\S]+?<a href="ticket.aspx?(.+?)">(.+?)<\/a>/g };
+
     const returnResult = {};
     let gameFound = false;
-    _.each({ HDPRegex, OURegex, firstHalfHDPRegex, firstHalfOURegex }, (regex) => {
+    _.each(this.eventRegex, (regex) => {
       // console.log(response.data);
-      const patternMatch = this.regexMatch(response.data, regex.pattern);
+      const patternMatch = this.regexMatch(data, regex.pattern);
       // const patternMatch = response.data.match(regex.pattern);
       // if (!_.isNull(debugInfo)) console.log(debugInfo);
       if (patternMatch.length > 0) {
@@ -238,14 +239,39 @@ class sbo extends connectionBase {
       }
     });
     if (!gameFound) return Promise.reject('game not found');
-    if (isGoingBack) await this.goingBack(response.data);
+    if (isGoingBack) await this.goingBack(data);
     return Promise.resolve(returnResult);
   }
-
+  async crawlAndMatch(url, patternRegex, isGoingBack = false, isGame = false, debugInfo = null) {
+    const response = await this.myCrawl(url);
+    if (response.data.indexOf('<title>ERROR</title>') > -1) {
+      return Promise.reject('title error ' + url + ' ' + (response.data.indexOf('Multiple login') > -1 ? 'multiLogin' : 'sessionTimeout'));
+    }
+    return this.myMatch(response.data, patternRegex, isGoingBack, isGame, debugInfo);
+  }
+  processGameRegexResult (gameRegexResults, leagueId, matchId) {
+    _.each(gameRegexResults, (gameRegexResult, key) => {
+      const gameType = key;
+      // console.log(gameRegexResult);
+      const gameCode = `${this.providerCode}-${matchId}-${gameType}`;
+      this.DBHandler.delaySetGame(this.providerCode, leagueId, matchId, gameCode, gameType);
+      _.each(gameRegexResult, (gameRegexResultIndividual) => {
+        const urlResult = Url.parse(Url.resolve(this.baseURL, `ticket.aspx?${gameRegexResultIndividual[1]}`), true);
+        // console.log(urlResult);
+        const isHomeOrAway = (urlResult.query.option === 'h' ? 0 : 1);
+        // console.log('sbo: odds submit: %s %s %s', `${leagueId}_${matchId}_${gameCode}_${isHomeOrAway}`, isHomeOrAway, urlResult.query.odds);
+        this.DBHandler.delaySetOdds(this.providerCode, leagueId, matchId, gameCode, gameType,
+          // `${leagueId}_${matchId}_${gameCode}_u${urlResult.query.id}_${isHomeOrAway}`, isHomeOrAway, urlResult.query.odds, -1);
+          `${leagueId}_${matchId}_${gameCode}_${isHomeOrAway}`, isHomeOrAway, urlResult.query.odds, -1);
+      });
+    });
+  }
   async crawl (marketId) {
-    console.log('crawl');
+    console.log('crawl:%s', marketId);
     if (!_.has(this.leagueQueue, marketId)) this.leagueQueue[marketId] = [];
     let crawlSuccess = false;
+    const toInternalEventScheduleIdArr = {today:'1',early:'2', live:'0'};
+    const scheduleId = toInternalEventScheduleIdArr[String(marketId)];
     while (!crawlSuccess) {
       try {
         if (!this.isLoggedIn) {
@@ -268,32 +294,19 @@ class sbo extends connectionBase {
             const isCrawlFinished = false;
             this.DBHandler.delaySetLeague(this.providerCode, leagueId, leagueName);
             await this.DBHandler.flushLeague();
-            const matchRegexResultArr = await this.crawlAndMatch(Url.resolve(this.baseURL, `odds-match.aspx?league=${leagueId}`)
-              , /odds-main.aspx\?match=(\d*)">(.+?)<\/a>/g);
+            const matchRegexResultArr = await this.crawlAndMatch(Url.resolve(this.baseURL, `odds-match.aspx?league=${leagueId}`),
+              /odds-main.aspx\?match=(\d*)">(.+?)<\/a>/g);
             const tmpResult = await Promise.map(matchRegexResultArr, async (matchRegexResult) => {
               const matchName = matchRegexResult[2];
               const matchId = matchRegexResult[1];
               const eventInfo = this.extractEventInfo(marketId, matchName);
               this.DBHandler.delaySetEvent(this.providerCode, leagueId, matchId,
-                eventInfo.homeTeam, eventInfo.homeTeam, eventInfo.awayTeam, eventInfo.awayTeam, '0', eventInfo.datetime, eventInfo.isLive);
+                eventInfo.homeTeam, eventInfo.homeTeam, eventInfo.awayTeam, eventInfo.awayTeam, '0', eventInfo.datetime, scheduleId);
               const gameRegex = /ticket.aspx\?(.+?)">(.+?)<\/a>/g;
               const gameRegexResults = await this.crawlAndMatch(Url.resolve(this.baseURL, `odds-main.aspx?match=${matchId}`), gameRegex, true, true, `${eventInfo.homeTeam}-${eventInfo.awayTeam}`);
               // console.log('gameRegexResult - %s', `${eventInfo.homeTeam}-${eventInfo.awayTeam}`);
-              _.each(gameRegexResults, (gameRegexResult, key) => {
-                const gameType = key;
-                // console.log(gameRegexResult);
-                const gameCode = `${this.providerCode}-${matchId}-${gameType}`;
-                this.DBHandler.delaySetGame(this.providerCode, leagueId, matchId, gameCode, gameType);
-                _.each(gameRegexResult, (gameRegexResultIndividual) => {
-                  const urlResult = Url.parse(Url.resolve(this.baseURL, `ticket.aspx?${gameRegexResultIndividual[1]}`), true);
-                  // console.log(urlResult);
-                  const isHomeOrAway = (urlResult.query.option === 'h' ? 0 : 1);
-                  // console.log('sbo: odds submit: %s %s %s', `${leagueId}_${matchId}_${gameCode}_${isHomeOrAway}`, isHomeOrAway, urlResult.query.odds);
-                  this.DBHandler.delaySetOdds(this.providerCode, leagueId, matchId, gameCode, gameType,
-                    // `${leagueId}_${matchId}_${gameCode}_u${urlResult.query.id}_${isHomeOrAway}`, isHomeOrAway, urlResult.query.odds, -1);
-                    `${leagueId}_${matchId}_${gameCode}_${isHomeOrAway}`, isHomeOrAway, urlResult.query.odds, -1);
-                });
-              });
+              this.processGameRegexResult(gameRegexResults, leagueId, matchId);
+              
               await this.DBHandler.flushEvent();
               await this.DBHandler.flushGame();
               await this.DBHandler.flushOdds();
@@ -309,7 +322,7 @@ class sbo extends connectionBase {
         await this.logout();
         return Promise.resolve();
       } catch (error) {
-        console.error('crawl:error - %s, %d', marketId, this.leagueQueue[marketId].length, error);
+        console.error('crawl:error - %s, %d', marketId, this.leagueQueue[marketId].length, error.message);
         await this.logout();
       }
     }
@@ -330,7 +343,7 @@ class sbo extends connectionBase {
       if (this.config.market.today) await this.crawl('today');
       if (this.config.market.early) await this.crawl('early');
       console.log('scheduling next startCrawl()');
-      console.log(this.config.market);
+      // console.log(this.config.market);
       _.delay(() => this.startCrawl(), this.config.updateDuration);
     } catch (e) {
       console.error(e);
@@ -339,15 +352,139 @@ class sbo extends connectionBase {
       _.delay(() => this.startCrawl(), this.config.errorReconnectDuration);
     }
   }
-  reset() {
+  async reset() {
     this.isLoggedIn = false;
     // rp(_.extend({}, this.loginOptions, {url: 'http://www.apiisn.com/betting/api/member/login'})).then((response) => {
     return this.startCrawl();
   }
 
-  start() {
+  async start() {
     console.log('sbo->start');
     return this.reset();
   }
+
+  init(forBetting = false) {
+    super.init();
+    if (forBetting) {
+      console.log('isn->for Betting');
+    }
+  }
+
+  async getReadyForBetting() {
+
+  }
+
+  isErrorResponseData(data) {
+    return (data.indexOf('<title>ERROR</title>') > -1);
+  }
+  async prepareBet(oddsObj) {
+    console.log('prepareBet');
+    console.log(oddsObj);
+    const eventObj = await this.DBHandler.loadObj(this.DBHandler.getEventIdByOddsId(oddsObj.id));
+    const toSBOMarketId = {1:'1', 0:'3', 2:'2'};
+    const marketId = toSBOMarketId[eventObj.eventMarketId];
+    const returnValue = {};
+    returnValue.providerCode = this.providerCode;
+    returnValue.providerKey = this.providerKey;
+    returnValue.isReadyToBet = false;
+    console.log('prepareBet:cp1-marketId', marketId);
+    const marketResponse = await this.myCrawl(Url.resolve(this.baseURL, `odds-sport.aspx?page=${marketId}`));
+    console.log(this.isErrorResponseData(marketResponse.data));
+    console.log('prepareBet:cp2');
+    if (!this.isErrorResponseData(marketResponse.data)) {
+      console.log('prepareBet:cp3');
+      const sportResponse = await this.myCrawl(Url.resolve(this.baseURL, 'odds-league.aspx?sport=1'));
+      if (!this.isErrorResponseData(sportResponse.data)) {
+        console.log('prepareBet:cp4');
+        const matchResponse = await this.myCrawl(Url.resolve(this.baseURL, `odds-match.aspx?league=${oddsObj.leagueCode}`));
+        if (!this.isErrorResponseData(matchResponse.data)) {
+          console.log('prepareBet:cp5');
+          const eventResponse = await this.myCrawl(Url.resolve(this.baseURL, `odds-main.aspx?match=${oddsObj.eventCode}`));
+          if (!this.isErrorResponseData(eventResponse.data)) {
+            console.log('prepareBet:cp0');
+            const gameTypeObj = this.DBHandler.decodeGameType(oddsObj.gameTypeStr);
+            const patternObj = _.find(this.eventRegex, {period: Number(gameTypeObj.period), gameType: gameTypeObj.gameType});
+            const result = this.regexMatch(eventResponse.data, patternObj.pattern);
+            const matchingIdx = oddsObj.homeOrAway === '0' ? '2' : '4';
+            const urlIdx = oddsObj.homeOrAway === '0' ? '1' : '3';
+            const matchObj = _.find(result, (o) => {
+              return o[matchingIdx].indexOf(`${gameTypeObj.gameTypeDetail} @ ${oddsObj.odds}`) > -1; 
+            });
+            if(!_.isUndefined(matchObj)) {
+              const qsStr =matchObj[urlIdx];
+              console.log(qsStr.substring(1));
+              const qsObj = qs.parse(qsStr.substring(1));
+              this.oIdCache[oddsObj.id] = qsObj.id;  
+              const oddsResponse = await this.myCrawl(Url.resolve(this.baseURL,
+                `ticket.aspx${matchObj[urlIdx]}`));
+              if (!this.isErrorResponseData(oddsResponse.data)) {
+                const pattern = / *(.+?): ([0-9\.\,\-\s]+?)<br>/g;
+                const result =this.regexMatch(oddsResponse.data, pattern);
+                const resultArr = {};
+                _.each(result, (resultItem) => {
+                  resultArr[resultItem[1]] = resultItem[2];
+                });
+                returnValue.minBet = Number(resultArr['Min Bet']);
+                returnValue.maxBet = Number(resultArr['Max Bet']);
+                returnValue.isReadyToBet = true;
+              }
+            } else {
+              console.log('match not found, odds changed');
+              console.log(eventResponse.data);
+              const pattern = /ticket.aspx\?(.+?)">(.+?)<\/a>/g;
+              const gameRegexResults = await this.myMatch(eventResponse.data, pattern, true, true);
+              console.log(gameRegexResults);
+              await this.processGameRegexResult(gameRegexResults, oddsObj.leagueId, oddsObj.matchId);
+              await this.DBHandler.flushGame();
+              await this.DBHandler.flushOdds();
+            }
+          }
+        }
+      }
+    }
+    /*
+    if(!returnValue.isReadyToBet) {
+      console.log('resetting...');
+      await this.refreshBetting();
+    }
+    */
+    return returnValue;
+  }
+
+  async placeBet(oddsObj, bet) {
+    const fd = {};
+    fd.__EVENTTARGET = '.';
+    fd.__EVENTARGUMENT = '';
+    fd.stake = bet;
+    // const oddsResultResponse = await this.myCrawl(Url.resolve(this.baseURL, `confirm.aspx?betcount=0&ostyle=4&oid=${this.oIdCache[oddsObj.id]}`));
+    const oddsResultResponse = await this.axios(Url.resolve(this.baseURL, `confirm.aspx?betcount=0&ostyle=4&oid=${this.oIdCache[oddsObj.id]}`), { method: 'post', data: qs.stringify(fd), withCredentials: true, headers: this.defaultOptions });
+    console.log(oddsResultResponse.data);
+    return Promise.resolve('bet ok');
+  }
+  async refreshBetting() {
+    const setSchedule = true;
+    this.loginTimeout = null;
+    try {
+      if (!this.isBetting) {
+        await this.login();
+        this.isAvailableForBetting = true;
+        console.log('sbo->isAvailableForBetting:', this.isAvailableForBetting);
+        if (setSchedule) this.loginTimeout = _.delay(() => this.refreshBetting(), 20000);
+      } else if (setSchedule) {
+        if (setSchedule) this.loginTimeout = _.delay(() => this.refreshBetting(), 200);
+      }
+      return true;
+    } catch (error) {
+      if (setSchedule) this.loginTimeout = _.delay(() => this.refreshBetting(), 200);
+      console.error('sbo->login->error');
+      console.error(error);
+    }
+  }
+
+  async getReadyForBetting() {
+    await this.refreshBetting(true);
+  }
+
+
 }
 module.exports = sbo

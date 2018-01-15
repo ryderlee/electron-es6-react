@@ -14,8 +14,8 @@ config.controller = {
         sportId: 1,
         momentFormatStr: 'LTS',
         errorReconnectDuration: 5000,
-        eventUpdateDuration: 10000,
-        liveEventUpdateDuration: 2000,
+        eventUpdateDuration: 2000,
+        liveEventUpdateDuration: 500,
         apiKeyDuration: 12000,
         proxy: {
           enableProxy: false,
@@ -79,7 +79,7 @@ config.controller = {
         password: 'aaaa1234',
         momentFormatStr: 'LTS',
         errorReconnectDuration: 5000,
-        updateDuration: 5000,
+        updateDuration: 2000,
         proxy: {
           enableProxy: false,
           proxySetting: {
@@ -108,7 +108,7 @@ config.controller = {
         password: 'aaaa1234',
         momentFormatStr: 'LTS',
         errorReconnectDuration: 5000,
-        updateDuration: 5000,
+        updateDuration: 2000,
         proxy: {
           enableProxy: false,
           proxySetting: {
@@ -137,7 +137,7 @@ config.controller = {
         password: 'aaaa1234',
         momentFormatStr: 'LTS',
         errorReconnectDuration: 5000,
-        updateDuration: 1000,
+        updateDuration: 100,
         proxy: {
           enableProxy: false,
           proxySetting: {
@@ -168,6 +168,94 @@ config.controller = {
         updateDuration: 10000
       }
     }
+  ],
+  bettingConnections: [
+    {
+      // 0
+      connectionID: 'isn',
+      enabled: true,
+      connectionKey: 'isnBet1',
+      forBetting: true,
+      config: {
+        username: 'c00002',
+        password: '1234aaaa',
+        sportId: 1,
+        momentFormatStr: 'LTS',
+        errorReconnectDuration: 5000,
+        eventUpdateDuration: 2000,
+        liveEventUpdateDuration: 500,
+        apiKeyDuration: 12000,
+        proxy: {
+          enableProxy: false,
+          proxySetting: {
+            host: '139.59.3.255',
+            port: 7777,
+            auth: {
+              username: 'mikeymike',
+              password: 'rapunz3l',
+            },
+          },
+        },
+        market: {
+          live: true,
+          today: true,
+          early: true,
+        },
+      },
+    },
+    {
+      connectionID: 'pinbet',
+      enabled: false,
+      connectionKey: 'pinbet1',
+      forBetting: true,
+      config: {
+        username: 'Ch8ccctest',
+        password: '1234aaaa',
+        momentFormatStr: 'LTS',
+        errorReconnectDuration: 5000,
+        leagueUpdateDuration: 30000,
+        eventUpdateDuration: 10000,
+        eventPriceUpdateDuration: 10000,
+        eventUpdateRetryDuration: 5000,
+        leagueUpdateRetryDuration: 5000,
+        eventPriceUpdateRetryDuration: 5000,
+        proxy: {
+          enableProxy: false,
+          proxySetting: {
+            host: '127.0.0.1',
+            port: 9000,
+            auth: {
+              username: 'mikeymike',
+              password: 'rapunz3l',
+            },
+          },
+        },
+      },
+    },
+    {
+      connectionID: 'sbo',
+      enabled: true,
+      connectionKey: 'sbo1',
+      forBetting: true,
+      config: {
+        username: 'Vdfb024',
+        password: 'aaaa1234',
+        momentFormatStr: 'LTS',
+        errorReconnectDuration: 5000,
+        updateDuration: 2000,
+        proxy: {
+          enableProxy: false,
+          proxySetting: {
+            host: '139.59.3.255',
+            port: 7777,
+            auth: {
+              username: 'mikeymike',
+              password: 'rapunz3l',
+            },
+          },
+        },
+      },
+    },
   ],
   view: {
     connections: {
