@@ -37,6 +37,40 @@ class connectionBase {
   getUniqueCode() {
     return this.providerKey;
   }
+
+  getPrepareBetResultObj() {
+    const returnValue = {};
+    returnValue.resultType = 'prepareBetResult';
+    returnValue.isPrepareBetError = false;
+    returnValue.isPrepareBetSuccess = false;
+    returnValue.isPrepareBetFailed = false;
+
+    returnValue.providerCode = this.providerCode;
+    returnValue.providerKey = this.providerKey;
+    returnValue.minBet = null;
+    returnValue.maxBet = null;
+
+    returnValue.error = {};
+    returnValue.error.isOddsChanged = false;
+    return returnValue;
+  }
+
+  getPlaceBetResultObj() {
+    const returnValue = {};
+    returnValue.resultType = 'placeBetResult';
+    returnValue.isPlaceBetError = false;
+    returnValue.isPlaceBetSuccess = false;
+    returnValue.isPlaceBetFailed = false;
+
+    returnValue.providerCode = this.providerCode;
+    returnValue.providerKey = this.providerKey;
+    returnValue.minBet = null;
+    returnValue.maxBet = null;
+
+    returnValue.error = {};
+    returnValue.error.isOddsChanged = false;
+    return returnValue;
+  }
 }
 // let exa = ReactDOM.render(<Example />, document.getElementById('content2'))
 module.exports = connectionBase;

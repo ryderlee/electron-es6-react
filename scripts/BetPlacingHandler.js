@@ -22,6 +22,7 @@ connectionStore.pinbet= require('./providers/pinbet');
 connectionStore.sbo = require('./providers/sbo');
 
 const config = require('./config');
+const sleep = require('sleep-promise');
 
 // const shremote = requireTaskPool(global.require.resolve('./StrategyHandlerRemote'))
 
@@ -86,33 +87,46 @@ class BetPlacingHandler {
 
   async bet(leftConnectionObj, rightConnectionObj, leftHandOddsObj, rightHandOddsObj) {
     console.log('bet');
-    console.log(leftHandOddsObj.providerCode, rightHandOddsObj.providerCode);
-    console.log(leftConnectionObj.providerCode, rightConnectionObj.providerCode);
-    
-    try {
-      leftConnectionObj.isAvailableForBetting = false;
-      rightConnectionObj.isAvailableForBetting = false;
-      const betInfoObjArr = await Promise.all([leftConnectionObj.prepareBet(leftHandOddsObj), rightConnectionObj.prepareBet(rightHandOddsObj)]);
-      if (_.has(betInfoObjArr[0], 'isReadyToBet') && _.has(betInfoObjArr[1], 'isReadyToBet')
-        && betInfoObjArr[0].isReadyToBet && betInfoObjArr[1].isReadyToBet) {
-        const minBet = await this.getBetAmount(betInfoObjArr[0], betInfoObjArr[1]);
-        console.log('minbet:', minBet);
-        console.log('bet now');
-        const leftResult = await leftConnectionObj.placeBet(leftHandOddsObj, minBet); 
-        const rightResult = await rightConnectionObj.placeBet(rightHandOddsObj, minBet); 
-        // const results = await Promise.mapSeries([leftConnectionObj.placeBet(leftHandOddsObj, minBet), rightConnectionObj.placeBet(rightHandOddsObj, minBet)]);
-        console.log(leftResult, rightResult);
-        return true;
-        // return results;
+    let count = 3;
+    let isBetCompleted = false;
+    while (!isBetCompleted && count > 0) {
+      console.log('attempt:%d', count);
+      count -= 1;
+      let minBet = 0;
+      try {
+        const betInfoObjArr = await Promise.all([leftConnectionObj.prepareBet(leftHandOddsObj), rightConnectionObj.prepareBet(rightHandOddsObj)]);
+        if (_.has(betInfoObjArr[0], 'isPrepareBetSuccess') && _.has(betInfoObjArr[1], 'isPrepareBetSuccess')
+          && betInfoObjArr[0].isPrepareBetSuccess && betInfoObjArr[1].isPrepareBetSuccess) {
+          minBet = this.getBetAmount(betInfoObjArr[0], betInfoObjArr[1]);
+          console.log('minbet:', minBet);
+          console.log('bet now');
+          const results = Promise.all([leftConnectionObj.placeBet(leftHandOddsObj, minBet), rightConnectionObj.placeBet(rightHandOddsObj, minBet)]);
+          if (results[0] && results[1]) {
+            isBetCompleted = true;
+            return true;
+          } else if (!results[0] && !results[1]) {
+            console.log('bet failed from both');
+            await Promise.all([leftConnectionObj.getReadyForBetting(), rightConnectionObj.getReadyForBetting()]);
+          } else {
+            console.log('bet failed in one side');
+          }
+          // return results;
+        } else {
+          console.log('not ready', betInfoObjArr);
+          await Promise.all([leftConnectionObj.getReadyForBetting(), rightConnectionObj.getReadyForBetting()]);
+        }
+      } catch (error) {
+        console.log('bet error');
+        if (leftConnectionObj.isMyError(error)) {
+          if (_.has(error, 'resultType') && error.resultType === 'placeBetResult')
+            leftConnectionObj.handleError(error, leftHandOddsObj);
+        }
+        console.error(error);
+        return false;
       }
-      console.log('not ready', betInfoObjArr);
-      await Promise.all([leftConnectionObj.getReadyForBetting(), rightConnectionObj.getReadyForBetting()]);
-      return false;
-    } catch (error) {
-      console.log('bet error');
-      console.error(error);
-      return false;
     }
+    console.log('still fail, leaving this bet');
+    return true;
   }
   async getReadyForBetting() {
     const promiseArr = [];
@@ -124,7 +138,7 @@ class BetPlacingHandler {
     });
     return Promise.all(promiseArr);
   }
-  async getBetAmount(leftHandOddsObj, rightHandOddsObj) {
+  getBetAmount(leftHandOddsObj, rightHandOddsObj) {
     return leftHandOddsObj.minBet > rightHandOddsObj.minBet ? leftHandOddsObj.minBet : rightHandOddsObj.minBet; 
   }
 
@@ -145,42 +159,49 @@ class BetPlacingHandler {
       this.hasBetWaiting[providerComboStr] = true;
       if (!_.has(this.isBettingByProviderCombo, providerComboStr)) this.isBettingByProviderCombo[providerComboStr] = false;
       if (!this.isBettingByProviderCombo[providerComboStr]) {
-        const betObj = await this.DBHandler.popBet(providerComboStr, true);
-        const oddsObjArr = betObj.oddsObjArr;
-        if (!_.isNil(oddsObjArr) && !_.isUndefined(oddsObjArr)) {
+        this.isBettingByProviderCombo[providerComboStr] = true;
+        let betObj = await this.DBHandler.popBet(providerComboStr);
+        while (!_.isNil(betObj) && !_.isUndefined(betObj)) {
+          const oddsObjArr = betObj.oddsObjArr;
           const leftHandOddsObj = oddsObjArr[0];
           const rightHandOddsObj = oddsObjArr[1];
           const leftHandOddsProviderCode = leftHandOddsObj.providerCode;
           const rightHandOddsProviderCode = rightHandOddsObj.providerCode;
-          const leftHandConnectionIndex = _.findIndex(this.connectionsByProviderCode[leftHandOddsProviderCode], { isAvailableForBetting: true });
-          const rightHandConnectionIndex = _.findIndex(this.connectionsByProviderCode[rightHandOddsProviderCode], { isAvailableForBetting: true });
-          console.log('connections:', leftHandConnectionIndex, rightHandConnectionIndex,this.isBettingByProviderCombo[providerComboStr] );
-          if (leftHandConnectionIndex > -1 && rightHandConnectionIndex > -1
-            && !_.isNil(oddsObjArr) && !this.isBettingByProviderCombo[providerComboStr]) {
-            this.isBettingByProviderCombo[providerComboStr] = true;
-            console.log('bet->place');
-            if (await this.bet(this.connectionsByProviderCode[leftHandOddsProviderCode][leftHandConnectionIndex],
-              this.connectionsByProviderCode[rightHandOddsProviderCode][rightHandConnectionIndex],
-              leftHandOddsObj, rightHandOddsObj)) {
-              console.log('bet success');
+          if (String(leftHandOddsObj.odds) === betObj.leftHandOdds && String(rightHandOddsObj.odds) === betObj.rightHandOdds) {
+            const leftHandConnectionIndex = _.findIndex(this.connectionsByProviderCode[leftHandOddsProviderCode], { isAvailableForBetting: true });
+            const rightHandConnectionIndex = _.findIndex(this.connectionsByProviderCode[rightHandOddsProviderCode], { isAvailableForBetting: true });
+            console.log('connections:', leftHandConnectionIndex, rightHandConnectionIndex, this.isBettingByProviderCombo[providerComboStr]);
+            if (leftHandConnectionIndex > -1 && rightHandConnectionIndex > -1
+              && !_.isNil(oddsObjArr) && !this.isBettingByProviderCombo[providerComboStr]) {
+              console.log('bet->place');
+              const betResult = await this.bet(this.connectionsByProviderCode[leftHandOddsProviderCode][leftHandConnectionIndex],
+                this.connectionsByProviderCode[rightHandOddsProviderCode][rightHandConnectionIndex],
+                leftHandOddsObj, rightHandOddsObj);
+              if (betResult) {
+                console.log('bet placed');
+                return true;
+              } else {
+                console.log('bet failed');
+                return false;
+              }
+              // await this.DBHandler.pushBet(providerComboStr, betObj.score, leftHandOddsObj, rightHandOddsObj, betObj.leftHandOdds, betObj.rightHandOdds);
+            } else {
+              console.log('no connections available:', leftHandOddsProviderCode, rightHandOddsProviderCode,
+              this.connectionsByProviderCode[leftHandOddsProviderCode].length,
+              this.connectionsByProviderCode[rightHandOddsProviderCode].length,
+              this.leftHandConnectionIndex, rightHandConnectionIndex);
               this.isBettingByProviderCombo[providerComboStr] = false;
-              return true;
-            } 
-            console.log('bet failed');
-            await this.DBHandler.pushBet(providerComboStr, betObj.score, leftHandOddsObj, rightHandOddsObj);
-            this.isBettingByProviderCombo[providerComboStr] = false;
-            this.isBetting = false;
+              await this.DBHandler.pushBet(providerComboStr, betObj.score, leftHandOddsObj, rightHandOddsObj, betObj.leftHandOdds, betObj.rightHandOdds);
+              await sleep(100);
+              betObj = await this.DBHandler.popBet(providerComboStr);
+            }
           } else {
-            console.log(_.isArray(this.connectionsByProviderCode[leftHandOddsProviderCode]));
-            console.log(_.isArray(this.connectionsByProviderCode[rightHandOddsProviderCode]));
-            console.log('no connections available:', leftHandOddsProviderCode, rightHandOddsProviderCode,
-            this.connectionsByProviderCode[leftHandOddsProviderCode].length,
-            this.connectionsByProviderCode[rightHandOddsProviderCode].length,
-            this.leftHandConnectionIndex, rightHandConnectionIndex);
+            console.log('odds changed, odds removing');
+            betObj = await this.DBHandler.popBet(providerComboStr);
           }
-        } else {
-          console.log('message received, no bets');
-        }
+        } 
+        this.isBettingByProviderCombo[providerComboStr] = false;
+        console.log('message received, no bets');
         return false;
       }
     }

@@ -71,7 +71,7 @@ class RedisSureBetHandler {
     const cutOffDatetime = moment().subtract(60, 'seconds').utc();
     const rounding = 100;
     const isNewOdds = cutOffDatetime.isBefore(moment(leftHandOddsObj.lastPingDatetime)) && cutOffDatetime.isBefore(moment(rightHandOddsObj.lastPingDatetime)) ;
-    console.log('%s odds found@%s: %s|%s %s & %s -> %s & %s %s %s Profit:%s', isNewOdds?'new':'old', moment().utc().format(),
+    console.log('%s odds found@%s: %s|%s|%s|%s -> %s & %s %s %s Profit:%s', isNewOdds?'new':'old', moment().utc().format(),
       leftHandOddsObj.id, rightHandOddsObj.id, 
       leftHandOddsObj.odds, rightHandOddsObj.odds,
       Math.round(leftHandOdds * rounding) / rounding, Math.floor(rightHandOdds * rounding) / rounding,

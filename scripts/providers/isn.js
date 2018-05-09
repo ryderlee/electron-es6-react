@@ -41,6 +41,8 @@ class isn extends connectionBase {
     this.defaultOptions = {
       responseType: 'json', // Automatically parses the JSON string in the response
     };
+
+    this.eventScheduleIdToString = {};
   }
   async start() {
     console.log('isn->start');
@@ -403,41 +405,66 @@ class isn extends connectionBase {
 
   async prepareBet(oddsObj) {
     await this.refreshBetting(true);
+
+    const returnValue = this.getBetResultObj();
+
     console.log(oddsObj);
     const betDetailResponse = await this.axios(`http://www.apiisn.com/betting/api/bet/betlimit/${oddsObj.rawJson.marketSelectionId}`, _.extend({}, this.apiOptions));
-    const returnValue = {};
-    returnValue.providerCode = this.providerCode;
-    returnValue.providerKey = this.providerKey;
     returnValue.minBet = betDetailResponse.data.minBet;
     returnValue.maxBet = betDetailResponse.data.maxBet;
     returnValue.isReadyToBet = (this.isLoggedIn && this.isAPIKeyReady && this.isMemberInfoReady);
+    if (returnValue.isReadyToBet) {
+      returnValue.isPrepareBetSuccess = true;
+    }
     return returnValue;
+  }
+  async getCancelSource() {
+    return this.axios.CancelToken;
+  }
+  async cancelBetBySource(source) {
+    source.cancel('cancel by source');
+    return true;
+  }
+  handlePlaceBetError(error, oddsObj, bet) {
+    if (error.response.status === 400 && _.has(error.response.data, 'errorCode') && error.response.data.errorCode === 'MT004') {
+      returnValue.isOddChanged = true;
+      returnValue.isError = true;
+      returnValue.raw = error;
+      throw Error(returnValue);
+    }
   }
 
   async placeBet(oddsObj, bet) {
+    const returnValue = this.getBetResultObj();
     console.log('placeBet', oddsObj);
     const param = { selectionId: oddsObj.rawJson.marketSelectionId, stake: bet, odds: oddsObj.odds, handicap: oddsObj.rawJson.handicap, nativeOdds: oddsObj.rawJson.nativeOdds };
+
     const prepareBetResponse = await this.axios.post('http://www.apiisn.com/betting/api/bet/preparebet', qs.stringify(param), _.extend({}, this.apiOptions));
     console.log('placeBet!!', prepareBetResponse.data);
     if (_.has(prepareBetResponse.data, 'respMessage')) {
-      //bet responded
+      // bet responsed
       if (_.has(prepareBetResponse.data, 'respCode') && prepareBetResponse.data.respCode === 'MT001') {
+        returnValue.isPlaceBetSuccess = true;
         console.log('bet success');
-        return true;
+        return returnValue;
       }
-      throw Error(prepareBetResponse.data);
+      const error = {};
+      error.response = prepareBetResponse;
+      throw Error(error);
     } else {
-      //prepare bet
+      // prepare bet
       console.log('isn->placeBet->confirmBet');
       await sleep(Number(prepareBetResponse.data.otherSportsLiveBetDelay));
       const confirmBetParam = { preparedBetId: prepareBetResponse.data.preparedBetId };
       const confirmBetResponse = await this.axios.post('http://www.apiisn.com/betting/api/bet/confirmbet', confirmBetParam, _.extend({}, this.apiOptions));
       if (_.has(confirmBetResponse.data, 'respMessage')) {
-        //bet responded
+        // bet responsed
         if (_.has(confirmBetResponse, 'respCode') && confirmBetResponse.respCode === 'MT001') {
           console.log('bet success');
           return true;
         }
+        const error = {};
+        error.response = confirmBetResponse;
         throw Error(confirmBetResponse.data);
       }
     }
@@ -455,7 +482,7 @@ class isn extends connectionBase {
   }
 
   async getReadyForBetting() {
-    await this.refreshBetting(true);
+    return this.refreshBetting();
   }
 
   init(forBetting = false) {

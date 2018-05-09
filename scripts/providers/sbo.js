@@ -184,7 +184,7 @@ class sbo extends connectionBase {
   }
 
   async myCrawl(url) {
-    console.debug('url:%s', url);
+    // console.debug('url:%s', url);
     return this.axios(url, _.extend({}, this.defaultOptions, { withCredentials: true }));
   }
   async goingBack(responseData) {
@@ -317,7 +317,7 @@ class sbo extends connectionBase {
             return tmpResult;
           }, { concurrency: 1 });
         }
-        console.log(`end crawling from sbo : %s`, marketId);
+        console.log(`end crawling from sbo : %s @ %s`, marketId, moment().utc());
         crawlSuccess = true;
         await this.logout();
         return Promise.resolve();
@@ -383,10 +383,7 @@ class sbo extends connectionBase {
     const eventObj = await this.DBHandler.loadObj(this.DBHandler.getEventIdByOddsId(oddsObj.id));
     const toSBOMarketId = {1:'1', 0:'3', 2:'2'};
     const marketId = toSBOMarketId[eventObj.eventMarketId];
-    const returnValue = {};
-    returnValue.providerCode = this.providerCode;
-    returnValue.providerKey = this.providerKey;
-    returnValue.isReadyToBet = false;
+    const returnValue = this.getBetResultObj();
     console.log('prepareBet:cp1-marketId', marketId);
     const marketResponse = await this.myCrawl(Url.resolve(this.baseURL, `odds-sport.aspx?page=${marketId}`));
     console.log(this.isErrorResponseData(marketResponse.data));
@@ -410,8 +407,8 @@ class sbo extends connectionBase {
             const matchObj = _.find(result, (o) => {
               return o[matchingIdx].indexOf(`${gameTypeObj.gameTypeDetail} @ ${oddsObj.odds}`) > -1; 
             });
-            if(!_.isUndefined(matchObj)) {
-              const qsStr =matchObj[urlIdx];
+            if (!_.isUndefined(matchObj)) {
+              const qsStr = matchObj[urlIdx];
               console.log(qsStr.substring(1));
               const qsObj = qs.parse(qsStr.substring(1));
               this.oIdCache[oddsObj.id] = qsObj.id;  

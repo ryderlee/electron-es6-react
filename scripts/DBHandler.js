@@ -349,7 +349,7 @@ class InfoHandler {
       if(await this.redis.set(`lock:${key}`, key, 'NX', 'PX', 4000)) {
         success = true;
       } else {
-        sleep(timeout);
+        await sleep(timeout);
         count =+ 1;
       }
     }
@@ -890,7 +890,8 @@ class InfoHandler {
     return this.getEventId(oddsId);
   }
 
-  async popBet(providerComboStr, withscore = true) {
+  async popBet(providerComboStr) {
+    const withscore = true;
     let result = null;
     const betObj = {};
     const pipe = new Redis();
@@ -903,10 +904,15 @@ class InfoHandler {
     await pipe.multi().zrem(`sortedSet_bets_${providerComboStr}`, result[0]).exec();
     if (result.length > 0 && !_.isNil(result[0]) && !_.isUndefined(result[0])) {
       betObj.score = result[1];
-      const leftHandOddsId = result[0].split('|')[0];
-      const rightHandOddsId = result[0].split('|')[1];
+      const tmpBet = result[0].split('|');
+      const leftHandOddsId = tmpBet[0];
+      const rightHandOddsId = tmpBet[1];
+      const leftHandOdds = tmpBet[2];
+      const rightHandOdds = tmpBet[3];
       const oddsObj = await Promise.all([this.loadObj(leftHandOddsId), this.loadObj(rightHandOddsId)]);
       betObj.oddsObjArr = oddsObj;
+      betObj.leftHandOdds = leftHandOdds;
+      betObj.rightHandOdds = rightHandOdds;
       return betObj;
     }
     return null;
